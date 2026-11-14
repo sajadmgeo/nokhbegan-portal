@@ -378,4 +378,4 @@ const INITIAL_COMPANIES = [
     incubationEntryDate: '1398/08/01',
     threeYearEndDate: '1401/08/01',
     renewalDate: '1402/08/01',
-    membershipStatus: 'خروج موفق به پارک
+    membershipStatus: 'خروج موفق به پارک'
