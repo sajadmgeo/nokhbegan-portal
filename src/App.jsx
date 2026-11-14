@@ -3,18 +3,18 @@ import {
   Building2, Users, Award, Package, Layers, Search,
   ChevronLeft, ChevronDown, ArrowRight, Shield, Lock, Plus, Edit,
   Trash2, Upload, Download, CheckCircle, AlertCircle, X,
-  BarChart3, Settings, LogOut, Eye, EyeOff, Globe, Phone,
-  MapPin, Calendar, FileText, Briefcase,
-  Check, RefreshCw, Star, Database, FileSpreadsheet, Printer,
-  History, Sparkles, SlidersHorizontal, Info,
+  BarChart3, Settings, Eye, EyeOff, Globe, Phone,
+  MapPin, Calendar, FileText,
+  Check, Star, FileSpreadsheet, Printer,
+  History, Sparkles, SlidersHorizontal,
   Mail, Inbox, Send, GitBranch, FileEdit, Archive, BookOpen,
   FilePlus2, Bell, PanelRightClose, PanelRightOpen, Menu,
-  FileCheck, Clock, AlertTriangle, Copy, FolderOpen, UserCheck,
+  Clock, AlertTriangle, UserCheck,
   FileCode, CheckSquare, CornerUpLeft
 } from 'lucide-react';
 
 // ============================================================================
-// ۱. داده‌های اولیه شرکت‌ها (بدون تغییر در کلیدها و ساختار قبلی)
+// ۱. داده‌های اولیه شرکت‌ها
 // ============================================================================
 const INITIAL_COMPANIES = [
   {
@@ -473,7 +473,7 @@ const DEFAULT_ACCESS_POLICIES = {
 };
 
 // ============================================================================
-// ۲. داده‌ها و ثابت‌های ماژول جدید «دبیرخانه الکترونیکی»
+// ۲. داده‌ها و ثابت‌های ماژول «دبیرخانه الکترونیکی»
 // ============================================================================
 const SECRETARIAT_ROLES = [
   { id: 'system_admin', label: 'مدیر سیستم', userDisplayName: 'مهندس محمدی (مدیر سیستم)', level: 5 },
@@ -509,7 +509,7 @@ const INITIAL_TEMPLATES = [
     title: 'معرفی‌نامه رسمی شرکت عضو مرکز رشد',
     category: 'امور شرکت‌ها',
     subjectTemplate: 'معرفی شرکت {{گیرنده}} جهت بهره‌مندی از تسهیلات و حمایت‌های فناورانه',
-    bodyTemplate: `با سلام و احترام؛\n\nبدین‌وسیله به استحضار می‌رساند شرکت «{{گیرنده}}» از واحدهای فناور مستقر و فعال در مرکز رشد فناوری نخبگان پارک فناوری پردیس می‌باشد.\n\nبا توجه به توانمندی‌های فنی و دستاوردهای دانش‌بنیان آن مجموعه در حوزه {{موضوع}}، خواهشمند است دستور فرمایید مساعدت و همکاری لازم در چارچوب ضوابط و مقررات مربوطه مبذول گردد.\n\nپیشاپیش از حسن توجه و همکاری جناب‌عالی سپاسگزاری می‌نماید.`,
+    bodyTemplate: 'با سلام و احترام؛\n\nبدین‌وسیله به استحضار می‌رساند شرکت «{{گیرنده}}» از واحدهای فناور مستقر و فعال در مرکز رشد فناوری نخبگان پارک فناوری پردیس می‌باشد.\n\nبا توجه به توانمندی‌های فنی و دستاوردهای دانش‌بنیان آن مجموعه در حوزه {{موضوع}}، خواهشمند است دستور فرمایید مساعدت و همکاری لازم در چارچوب ضوابط و مقررات مربوطه مبذول گردد.\n\nپیشاپیش از حسن توجه و همکاری جناب‌عالی سپاسگزاری می‌نماید.',
     signerName: 'دکتر حمیدرضا رضایی',
     signerTitle: 'رئیس مرکز رشد فناوری نخبگان'
   },
@@ -518,7 +518,7 @@ const INITIAL_TEMPLATES = [
     title: 'ابلاغیه تمدید قرارداد استقرار در مرکز رشد',
     category: 'قراردادها و استقرار',
     subjectTemplate: 'موافقت با تمدید دوره استقرار شرکت {{گیرنده}}',
-    bodyTemplate: `با سلام و احترام؛\n\nعطف به مصوبه شورای فناوری مرکز رشد فناوری نخبگان و بررسی گزارش عملکرد دوره‌ای آن شرکت، بدین‌وسیله با تمدید قرارداد استقرار شرکت «{{گیرنده}}» به مدت یک سال موافقت می‌گردد.\n\nمقتضی است نماینده محترم آن شرکت ظرف مدت ۱۰ روز کاری جهت تکمیل مستندات و امضای الحاقیه قرارداد به دبیرخانه مرکز رشد مراجعه نماید.`,
+    bodyTemplate: 'با سلام و احترام؛\n\nعطف به مصوبه شورای فناوری مرکز رشد فناوری نخبگان و بررسی گزارش عملکرد دوره‌ای آن شرکت، بدین‌وسیله با تمدید قرارداد استقرار شرکت «{{گیرنده}}» به مدت یک سال موافقت می‌گردد.\n\nمقتضی است نماینده محترم آن شرکت ظرف مدت ۱۰ روز کاری جهت تکمیل مستندات و امضای الحاقیه قرارداد به دبیرخانه مرکز رشد مراجعه نماید.',
     signerName: 'دکتر حمیدرضا رضایی',
     signerTitle: 'رئیس مرکز رشد فناوری نخبگان'
   },
@@ -527,7 +527,7 @@ const INITIAL_TEMPLATES = [
     title: 'دعوت‌نامه حضور در جلسه شورای ارزیابی و داوری',
     category: 'جلسات و شوراها',
     subjectTemplate: 'دعوت به جلسه ارائه و دفاع فنی — {{موضوع}}',
-    bodyTemplate: `با سلام و احترام؛\n\nبدین‌وسیله از جناب‌عالی / سرکار عالی دعوت به عمل می‌آید تا در جلسه کمیته تخصصی ارزیابی هسته‌ها و شرکت‌های فناور مرکز رشد فناوری نخبگان حضور به هم رسانید.\n\nخواهشمند است مستندات فنی و فایل ارائه (Pitch Deck) خود را حداکثر ۲۴ ساعت پیش از برگزاری جلسه به دبیرخانه ارسال فرمایید.`,
+    bodyTemplate: 'با سلام و احترام؛\n\nبدین‌وسیله از جناب‌عالی / سرکار عالی دعوت به عمل می‌آید تا در جلسه کمیته تخصصی ارزیابی هسته‌ها و شرکت‌های فناور مرکز رشد فناوری نخبگان حضور به هم رسانید.\n\nخواهشمند است مستندات فنی و فایل ارائه (Pitch Deck) خود را حداکثر ۲۴ ساعت پیش از برگزاری جلسه به دبیرخانه ارسال فرمایید.',
     signerName: 'سرکار خانم مریم کریمی',
     signerTitle: 'مسئول دبیرخانه مرکز رشد فناوری نخبگان'
   },
@@ -536,7 +536,7 @@ const INITIAL_TEMPLATES = [
     title: 'پاسخ استعلام وضعیت عضویت و استقرار',
     category: 'پاسخ استعلامات',
     subjectTemplate: 'پاسخ به استعلام شماره {{موضوع}} در خصوص وضعیت استقرار شرکت',
-    bodyTemplate: `با سلام و احترام؛\n\nبازگشت به نامه شماره {{موضوع}}، به استحضار می‌رساند شرکت مورد استعلام در حال حاضر دارای قرارداد استقرار معتبر در مرکز رشد فناوری نخبگان پارک فناوری پردیس بوده و فعالیت‌های تحقیق و توسعه خود را مطابق برنامه مصوب دنبال می‌نماید.`,
+    bodyTemplate: 'با سلام و احترام؛\n\nبازگشت به نامه شماره {{موضوع}}، به استحضار می‌رساند شرکت مورد استعلام در حال حاضر دارای قرارداد استقرار معتبر در مرکز رشد فناوری نخبگان پارک فناوری پردیس بوده و فعالیت‌های تحقیق و توسعه خود را مطابق برنامه مصوب دنبال می‌نماید.',
     signerName: 'دکتر حمیدرضا رضایی',
     signerTitle: 'رئیس مرکز رشد فناوری نخبگان'
   }
@@ -558,7 +558,7 @@ const INITIAL_SECRETARIAT_STATE = {
   letters: [
     {
       id: 'let-101',
-      type: 'incoming', // incoming | outgoing | internal
+      type: 'incoming',
       indicatorNumber: '1405/و/1001',
       year: '1405',
       seqNumber: 1001,
@@ -573,8 +573,8 @@ const INITIAL_SECRETARIAT_STATE = {
       subject: 'درخواست تمدید قرارداد استقرار و افزایش فضای آزمایشگاهی',
       summary: 'شرکت پارس هوش مصنوعی پردیس با توجه به افزایش نیروی انسانی به ۲۲ نفر، درخواست تمدید قرارداد و تخصیص فضای مجاور را ارسال نموده است.',
       body: 'با سلام و احترام؛\n\nنظر به توسعه فعالیت‌های تحقیق و توسعه این شرکت و افزایش تعداد متخصصین مستقر به ۲۲ نفر، خواهشمند است با تمدید قرارداد استقرار برای سال جدید و تخصیص واحد مجاور موافقت فرمایید.',
-      priority: 'فوری', // عادی | فوری | آنی
-      confidentiality: 'عادی', // عادی | محرمانه | خیلی محرمانه
+      priority: 'فوری',
+      confidentiality: 'عادی',
       status: 'ارجاع‌شده',
       deadline: '1405/01/28',
       assignedToRole: 'expert',
@@ -722,7 +722,7 @@ const INITIAL_SECRETARIAT_STATE = {
       recipientOrg: 'زیست‌فناوران نوین ژنوم',
       subject: 'معرفی شرکت زیست‌فناوران نوین ژنوم جهت اخذ مجوز تولید کیت تشخیصی',
       summary: 'صدور معرفی‌نامه رسمی استقرار و فعالیت فناورانه شرکت زیست‌فناوران نوین ژنوم.',
-      body: `با سلام و احترام؛\n\nبدین‌وسیله به استحضار می‌رساند شرکت «زیست‌فناوران نوین ژنوم» به شناسه ملی ۱۴۰۰۹۸۷۶۵۴۳ از واحدهای فناور دانش‌بنیان مستقر در مرکز رشد فناوری نخبگان پارک فناوری پردیس می‌باشد.\n\nبا توجه به توانمندی‌های فنی آن شرکت در زمینه تولید کیت‌های تشخیص مولکولی، خواهشمند است مساعدت لازم در فرآیند ارزیابی و صدور مجوزهای مربوطه مبذول گردد.`,
+      body: 'با سلام و احترام؛\n\nبدین‌وسیله به استحضار می‌رساند شرکت «زیست‌فناوران نوین ژنوم» به شناسه ملی ۱۴۰۰۹۸۷۶۵۴۳ از واحدهای فناور دانش‌بنیان مستقر در مرکز رشد فناوری نخبگان پارک فناوری پردیس می‌باشد.\n\nبا توجه به توانمندی‌های فنی آن شرکت در زمینه تولید کیت‌های تشخیص مولکولی، خواهشمند است مساعدت لازم در فرآیند ارزیابی و صدور مجوزهای مربوطه مبذول گردد.',
       priority: 'عادی',
       confidentiality: 'عادی',
       status: 'ارسال‌شده',
@@ -758,7 +758,7 @@ const INITIAL_SECRETARIAT_STATE = {
       recipientOrg: 'مکاترونیک و رباتیک سپهر',
       subject: 'ابلاغ مصوبه انتقال و استقرار در اراضی فاز ۲ پارک فناوری پردیس',
       summary: 'اعلام موافقت نهایی با فارغ‌التحصیلی شرکت از مرکز رشد و انتقال به اراضی پارک.',
-      body: `با سلام و احترام؛\n\nبا تبریک موفقیت‌های ارزشمند آن مجموعه در تجاری‌سازی ربات‌های لجستیک خودران، به اطلاع می‌رساند با درخواست انتقال و استقرار مستقل شرکت «مکاترونیک و رباتیک سپهر» در اراضی فاز ۲ پارک فناوری پردیس موافقت گردید.\n\nخواهشمند است جهت تحویل واحد فعلی در مرکز رشد و امضای صورت‌جلسه خروج موفق اقدام فرمایید.`,
+      body: 'با سلام و احترام؛\n\nبا تبریک موفقیت‌های ارزشمند آن مجموعه در تجاری‌سازی ربات‌های لجستیک خودران، به اطلاع می‌رساند با درخواست انتقال و استقرار مستقل شرکت «مکاترونیک و رباتیک سپهر» در اراضی فاز ۲ پارک فناوری پردیس موافقت گردید.\n\nخواهشمند است جهت تحویل واحد فعلی در مرکز رشد و امضای صورت‌جلسه خروج موفق اقدام فرمایید.',
       priority: 'فوری',
       confidentiality: 'عادی',
       status: 'ارسال‌شده',
@@ -794,7 +794,7 @@ const INITIAL_SECRETARIAT_STATE = {
       recipientOrg: 'هسته فناور نانوپوشش آریا',
       subject: 'معرفی هسته فناور نانوپوشش آریا جهت دریافت تسهیلات نمونه‌سازی',
       summary: 'پیش‌نویس معرفی‌نامه تسهیلات بذری برای هسته فناور آریا',
-      body: `با سلام و احترام؛\n\nبدین‌وسیله هسته فناور «نانوپوشش آریا» که در دوره پیش‌رشد مرکز رشد فناوری نخبگان مشغول به فعالیت می‌باشد، جهت بررسی طرح و بهره‌مندی از تسهیلات نمونه‌سازی معرفی می‌گردد.`,
+      body: 'با سلام و احترام؛\n\nبدین‌وسیله هسته فناور «نانوپوشش آریا» که در دوره پیش‌رشد مرکز رشد فناوری نخبگان مشغول به فعالیت می‌باشد، جهت بررسی طرح و بهره‌مندی از تسهیلات نمونه‌سازی معرفی می‌گردد.',
       priority: 'عادی',
       confidentiality: 'عادی',
       status: 'پیش‌نویس',
@@ -890,7 +890,7 @@ const INITIAL_SECRETARIAT_STATE = {
 };
 
 // ============================================================================
-// ۳. توابع کمکی تاریخ شمسی، اعداد فارسی و تولید فایل واقعی Microsoft Word (.docx)
+// ۳. توابع کمکی تاریخ شمسی، اعداد فارسی و تولید فایل واقعی Word (.docx)
 // ============================================================================
 const toPersianDigits = (val) => {
   if (val === null || val === undefined) return '';
@@ -933,8 +933,7 @@ const generateSlug = (name) => {
   );
 };
 
-// --- موتور تولید فایل واقعی و استاندارد Microsoft Word (.docx) در مرورگر بدون وابستگی خارجی ---
-// ایجاد فایل استاندارد OpenXML (.docx) شامل ZIP بدون فشرده‌سازی (Store) با CRC32 دقیق
+// تولید فایل استاندارد OpenXML (.docx)
 const makeCrc32Table = () => {
   const table = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
@@ -968,13 +967,12 @@ const buildSimpleZipBlob = (files) => {
     const crc = computeCrc32(contentBytes);
     const size = contentBytes.length;
 
-    // Local File Header (30 bytes + name)
     const localHeader = new Uint8Array(30 + nameBytes.length);
     const lv = new DataView(localHeader.buffer);
     lv.setUint32(0, 0x04034b50, true);
     lv.setUint16(4, 20, true);
-    lv.setUint16(6, 0x0800, true); // UTF-8 flag
-    lv.setUint16(8, 0, true); // Store (no compression)
+    lv.setUint16(6, 0x0800, true);
+    lv.setUint16(8, 0, true);
     lv.setUint16(10, 0, true);
     lv.setUint16(12, 0, true);
     lv.setUint32(14, crc, true);
@@ -986,7 +984,6 @@ const buildSimpleZipBlob = (files) => {
 
     localChunks.push(localHeader, contentBytes);
 
-    // Central Directory Header (46 bytes + name)
     const centralHeader = new Uint8Array(46 + nameBytes.length);
     const cv = new DataView(centralHeader.buffer);
     cv.setUint32(0, 0x02014b50, true);
@@ -1242,7 +1239,6 @@ const CompanyAvatar = ({ company, size = 'md' }) => {
 // ۴. کامپوننت اصلی اپلیکیشن با منوی عمودی سمت راست (Right Sidebar Navigation)
 // ============================================================================
 export default function App() {
-  // بارگذاری خودکار کتابخانه SheetJS از CDN برای عملکرد بدون خطا در پیش‌نمایش و بیلد
   useEffect(() => {
     if (!window.XLSX && !document.getElementById('sheetjs-cdn-script')) {
       const script = document.createElement('script');
@@ -1253,7 +1249,6 @@ export default function App() {
     }
   }, []);
 
-  // --- وضعیت شرکت‌ها (حفظ کلید localStorage قبلی) ---
   const [companies, setCompanies] = useState(() => {
     try {
       const saved = localStorage.getItem('nokhbegan_companies_v1');
@@ -1272,7 +1267,6 @@ export default function App() {
     }
   });
 
-  // --- وضعیت ماژول دبیرخانه الکترونیکی ---
   const [secretariat, setSecretariat] = useState(() => {
     try {
       const saved = localStorage.getItem('nokhbegan_secretariat_v1');
@@ -1306,19 +1300,14 @@ export default function App() {
     }
   }, [secretariat]);
 
-  // --- وضعیت ناوبری عمودی سمت راست و کاربر فعال ---
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [openMenus, setOpenMenus] = useState({ companies: true, secretariat: true });
+  const [openMenus, setOpenMenus] = useState({ portal: true, secretariat: true });
 
-  // بخش‌های فعال سامانه:
-  // پورتال و شرکت‌ها: 'public_home' | 'company_detail' | 'admin_login' | 'comp_dashboard' | 'comp_list' | 'comp_form' | 'comp_excel' | 'comp_settings'
-  // دبیرخانه الکترونیکی: 'sec_dashboard' | 'sec_incoming' | 'sec_outgoing' | 'sec_new' | 'sec_my_tasks' | 'sec_workflow' | 'sec_drafts' | 'sec_indicator' | 'sec_archive' | 'sec_trash' | 'sec_templates' | 'sec_reports' | 'sec_settings'
   const [activeSection, setActiveSection] = useState('public_home');
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [editingCompany, setEditingCompany] = useState(null);
 
-  // نقش کاربری فعال (برای مدیریت شرکت‌ها و دبیرخانه)
   const [adminUser, setAdminUser] = useState({
     username: 'admin',
     role: 'admin',
@@ -1326,11 +1315,9 @@ export default function App() {
     name: 'مهندس محمدی (مدیر سیستم)'
   });
 
-  // مودال جزئیات/گردش نامه در دبیرخانه
   const [selectedLetterId, setSelectedLetterId] = useState(null);
   const [editingDraftLetter, setEditingDraftLetter] = useState(null);
 
-  // جستجوی سریع در سربرگ و اعلان‌ها
   const [globalSearch, setGlobalSearch] = useState('');
   const [showGlobalSearchResults, setShowGlobalSearchResults] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -1341,7 +1328,6 @@ export default function App() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // --- آمار تجمیعی شرکت‌ها ---
   const companyStats = useMemo(() => {
     const publicList = companies.filter((c) => c.isPublic);
     const activeCount = companies.filter((c) => c.status && c.status.includes('فعال')).length;
@@ -1383,14 +1369,12 @@ export default function App() {
     };
   }, [companies]);
 
-  // --- آمار تجمیعی دبیرخانه الکترونیکی (با اعمال سطح دسترسی محرمانگی) ---
   const visibleLetters = useMemo(() => {
     const roleObj = SECRETARIAT_ROLES.find((r) => r.id === adminUser?.secretariatRole) || SECRETARIAT_ROLES[4];
     return secretariat.letters.filter((l) => {
       if (l.confidentiality === 'خیلی محرمانه' && roleObj.level < 4) return false;
       if (l.confidentiality === 'محرمانه' && roleObj.level < 2) return false;
       if (roleObj.id === 'expert') {
-        // کارشناس نامه‌های ارجاع‌شده به خودش یا عادیِ ایجادشده توسط خودش را می‌بیند
         const isAssigned =
           l.assignedToRole === 'expert' ||
           (l.referrals || []).some((r) => r.toRole === 'expert');
@@ -1434,7 +1418,6 @@ export default function App() {
     };
   }, [visibleLetters, adminUser]);
 
-  // نتایج جست‌وجوی سراسری در کل سامانه
   const globalSearchResults = useMemo(() => {
     const q = globalSearch.trim().toLowerCase();
     if (!q) return { companies: [], letters: [] };
@@ -1459,7 +1442,6 @@ export default function App() {
     return { companies: matchedCompanies, letters: matchedLetters };
   }, [globalSearch, companies, visibleLetters]);
 
-  // --- توابع عملیاتی دبیرخانه (شماره‌گذاری تراکنشی، ثبت، ارجاع، بایگانی، حذف نرم) ---
   const allocateIndicatorNumber = (type, currentSettings) => {
     const year = currentSettings.currentYear || '1405';
     if (type === 'incoming') {
@@ -1494,7 +1476,6 @@ export default function App() {
       let finalIndicator = letterPayload.indicatorNumber || '';
       let seqNum = letterPayload.seqNumber || null;
 
-      // تخصیص شماره اندیکاتور تراکنشی: برای وارده همیشه و برای صادره فقط پس از تأیید و ثبت نهایی
       const needsIndicator =
         !finalIndicator && (letterPayload.type === 'incoming' || finalize);
 
@@ -1538,7 +1519,6 @@ export default function App() {
         nextLetters.unshift(savedLetter);
       }
 
-      // ثبت در دفتر اندیکاتور (بدون تکرار)
       if (finalIndicator && !nextLedger.some((item) => item.indicatorNumber === finalIndicator)) {
         nextLedger.unshift({
           id: 'ind-' + Date.now(),
@@ -1715,7 +1695,6 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // --- ساختار آیتم‌های منوی عمودی سمت راست (Right Sidebar Navigation) ---
   const sidebarGroups = [
     {
       id: 'portal',
@@ -1752,12 +1731,10 @@ export default function App() {
     }
   ];
 
-  // --- رندر منوی عمودی سمت راست ---
   const renderSidebarContent = (isMobile = false) => {
     const expanded = isMobile ? true : sidebarOpen;
     return (
       <div className="flex flex-col h-full bg-[#0b1f3a] text-slate-200 select-none">
-        {/* برند و لوگوی سازمانی بالای سایدبار */}
         <div className="h-20 px-4 flex items-center justify-between border-b border-blue-900/60 shrink-0">
           <div
             onClick={() => handleNavigate('public_home')}
@@ -1797,7 +1774,6 @@ export default function App() {
           )}
         </div>
 
-        {/* لیست منوها و زیرمنوها */}
         <div className="flex-1 overflow-y-auto py-4 px-2.5 space-y-5">
           {sidebarGroups.map((group) => {
             const isGroupOpen = openMenus[group.id];
@@ -1875,7 +1851,6 @@ export default function App() {
           })}
         </div>
 
-        {/* فوتر سایدبار: نمایش کاربر و تغییر سریع نقش */}
         <div className="p-3 border-t border-blue-900/60 bg-[#081629] shrink-0">
           {expanded ? (
             <div className="space-y-2">
@@ -1930,7 +1905,6 @@ export default function App() {
       dir="rtl"
       className="min-h-screen bg-slate-50 text-slate-800 flex font-sans selection:bg-blue-700 selection:text-white"
     >
-      {/* اعلان شناور (Toast) */}
       {toast && (
         <div className="fixed bottom-5 left-5 z-50 flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-xl border bg-white border-slate-200">
           {toast.type === 'success' ? (
@@ -1942,7 +1916,6 @@ export default function App() {
         </div>
       )}
 
-      {/* منوی عمودی سمت راست (دسکتاپ) */}
       <aside
         className={`hidden lg:block shrink-0 transition-all duration-300 border-l border-slate-200 no-print ${
           sidebarOpen ? 'w-72' : 'w-20'
@@ -1951,7 +1924,6 @@ export default function App() {
         <div className="sticky top-0 h-screen">{renderSidebarContent(false)}</div>
       </aside>
 
-      {/* منوی کشویی موبایل */}
       {mobileDrawerOpen && (
         <div className="fixed inset-0 z-50 lg:hidden flex no-print">
           <div className="w-72 h-full shadow-2xl">{renderSidebarContent(true)}</div>
@@ -1962,9 +1934,7 @@ export default function App() {
         </div>
       )}
 
-      {/* فضای اصلی محتوا در سمت چپ منو */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* نوار بالای صفحه: جست‌وجوی سریع، اعلان‌ها و عنوان سامانه */}
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 h-16 px-4 sm:px-6 flex items-center justify-between gap-4 no-print">
           <div className="flex items-center gap-3">
             <button
@@ -1983,7 +1953,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* جست‌وجوی سریع کل سامانه و اعلان‌ها */}
           <div className="flex items-center gap-3 flex-1 max-w-xl justify-end">
             <div className="relative flex-1 max-w-sm">
               <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
@@ -2000,7 +1969,6 @@ export default function App() {
                 className="w-full pr-9 pl-3 py-2 rounded-xl bg-slate-100 border border-transparent focus:bg-white focus:border-blue-500 text-xs outline-none transition-all"
               />
 
-              {/* نتایج لحظه‌ای جستجوی سراسری */}
               {showGlobalSearchResults && globalSearch.trim() && (
                 <div className="absolute left-0 right-0 top-11 bg-white rounded-2xl shadow-xl border border-slate-200 p-3 z-50 text-xs space-y-3">
                   <div>
@@ -2047,7 +2015,6 @@ export default function App() {
               )}
             </div>
 
-            {/* زنگوله اعلان‌های جدید */}
             <div className="relative">
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
@@ -2098,9 +2065,7 @@ export default function App() {
           </div>
         </header>
 
-        {/* بدنه پویای بخش انتخاب‌شده */}
         <main className="flex-1">
-          {/* --- بخش‌های پورتال عمومی و مدیریت شرکت‌ها (حفظ کامل امکانات قبلی) --- */}
           {activeSection === 'public_home' && (
             <PublicDirectoryView
               companies={companies}
@@ -2144,7 +2109,6 @@ export default function App() {
                 companies={companies}
                 setCompanies={setCompanies}
                 isSuperAdmin={adminUser?.role === 'admin'}
-                adminUser={adminUser}
                 onEdit={(c) => {
                   setEditingCompany(c);
                   handleNavigate('comp_form');
@@ -2161,7 +2125,6 @@ export default function App() {
                 editingCompany={editingCompany}
                 companies={companies}
                 setCompanies={setCompanies}
-                adminUser={adminUser}
                 onDone={() => {
                   setEditingCompany(null);
                   handleNavigate('comp_list');
@@ -2174,9 +2137,7 @@ export default function App() {
           {activeSection === 'comp_excel' && (
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <AdminExcelImportTab
-                companies={companies}
                 setCompanies={setCompanies}
-                adminUser={adminUser}
                 onDone={() => handleNavigate('comp_list')}
                 showToast={showToast}
               />
@@ -2186,10 +2147,7 @@ export default function App() {
           {activeSection === 'comp_settings' && (
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <AdminSettingsTab
-                companies={companies}
                 setCompanies={setCompanies}
-                accessPolicies={accessPolicies}
-                setAccessPolicies={setAccessPolicies}
                 isSuperAdmin={adminUser?.role === 'admin'}
                 onBackupJson={() => {
                   const blob = new Blob([JSON.stringify(companies, null, 2)], { type: 'application/json' });
@@ -2216,7 +2174,6 @@ export default function App() {
             </div>
           )}
 
-          {/* --- ۱۳ زیربخش ماژول جدید «دبیرخانه الکترونیکی» --- */}
           {activeSection === 'sec_dashboard' && (
             <SecretariatDashboardView
               stats={secretariatStats}
@@ -2263,7 +2220,6 @@ export default function App() {
               templates={secretariat.templates}
               settings={secretariat.settings}
               initialLetter={editingDraftLetter}
-              adminUser={adminUser}
               onSaveLetter={(payload, finalize) => {
                 handleSaveLetter(payload, finalize);
                 setEditingDraftLetter(null);
@@ -2304,7 +2260,7 @@ export default function App() {
                       id: 'log-' + Date.now(),
                       date: nowStr,
                       user: adminUser?.name || 'کاربر',
-                      action: `ثبت نتیجه اقدام برای نامه`
+                      action: 'ثبت نتیجه اقدام برای نامه'
                     },
                     ...prev.auditLogs
                   ]
@@ -2434,12 +2390,10 @@ export default function App() {
           )}
         </main>
 
-        {/* مودال جامع مشاهده نامه، گردش کار، بارگذاری نسخه Word و چاپ رسمی */}
         {selectedLetter && (
           <LetterDetailModal
             letter={selectedLetter}
             orgSettings={secretariat.settings}
-            adminUser={adminUser}
             onClose={() => setSelectedLetterId(null)}
             onRefer={(refData) => handleReferLetter(selectedLetter.id, refData)}
             onUpdateStatus={(newStatus) => {
@@ -2501,7 +2455,6 @@ export default function App() {
           />
         )}
 
-        {/* پابرگ سازمانی */}
         <footer className="bg-[#081629] text-slate-400 border-t border-slate-800 mt-16 no-print">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center text-xs">
@@ -2536,10 +2489,9 @@ export default function App() {
 }
 
 // ============================================================================
-// ۵. کامپوننت‌های ماژول «دبیرخانه الکترونیکی» (۱۳ زیربخش عملیاتی)
+// ۵. کامپوننت‌های ماژول «دبیرخانه الکترونیکی»
 // ============================================================================
 
-// ۵-۱. داشبورد دبیرخانه الکترونیکی
 function SecretariatDashboardView({ stats, letters, auditLogs, onNavigate, onOpenLetter }) {
   const kpiCards = [
     { label: 'کل نامه‌های وارده', value: stats.incomingCount, icon: Inbox, color: 'text-blue-700 bg-blue-50 border-blue-200', target: 'sec_incoming' },
@@ -2582,7 +2534,6 @@ function SecretariatDashboardView({ stats, letters, auditLogs, onNavigate, onOpe
         </div>
       </div>
 
-      {/* کارت‌های آماری ۷گانه دبیرخانه */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3.5">
         {kpiCards.map((c, idx) => (
           <div
@@ -2603,7 +2554,6 @@ function SecretariatDashboardView({ stats, letters, auditLogs, onNavigate, onOpe
         ))}
       </div>
 
-      {/* جدول آخرین مکاتبات و تاریخچه فعالیت‌های دبیرخانه */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="p-5 border-b border-slate-200 flex items-center justify-between">
@@ -2670,7 +2620,6 @@ function SecretariatDashboardView({ stats, letters, auditLogs, onNavigate, onOpe
           </div>
         </div>
 
-        {/* وقایع و لاگ‌های اخیر دبیرخانه */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <h3 className="font-bold text-slate-900 text-sm mb-4 flex items-center gap-2">
             <History className="w-4 h-4 text-blue-600" />
@@ -2693,7 +2642,6 @@ function SecretariatDashboardView({ stats, letters, auditLogs, onNavigate, onOpe
   );
 }
 
-// ۵-۲ و ۵-۳. لیست نامه‌های وارده و صادره
 function SecretariatLettersListView({
   mode,
   title,
@@ -2742,7 +2690,6 @@ function SecretariatLettersListView({
         </button>
       </div>
 
-      {/* فیلترهای جست‌وجو */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm grid grid-cols-1 sm:grid-cols-4 gap-3">
         <div className="sm:col-span-2 relative">
           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
@@ -2778,7 +2725,6 @@ function SecretariatLettersListView({
         </select>
       </div>
 
-      {/* جدول نامه‌ها */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs">
@@ -2884,13 +2830,11 @@ function SecretariatLettersListView({
   );
 }
 
-// ۵-۴. فرم جامع ثبت نامه جدید (وارده / صادره / داخلی) با قالب آماده و پیوست چندفایلی
 function SecretariatNewLetterView({
   companies,
   templates,
   settings,
   initialLetter,
-  adminUser,
   onSaveLetter,
   onExportWord,
   onCancel,
@@ -3018,7 +2962,6 @@ function SecretariatNewLetterView({
           </div>
         ) : (
           <div className="p-6 space-y-6">
-            {/* انتخاب نوع نامه و قالب آماده */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl bg-blue-50/60 border border-blue-200/80">
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-1.5">نوع مکاتبه</label>
@@ -3065,7 +3008,6 @@ function SecretariatNewLetterView({
               </div>
             </div>
 
-            {/* فیلدهای اختصاصی وارده یا صادره */}
             {form.type === 'incoming' ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
@@ -3081,7 +3023,7 @@ function SecretariatNewLetterView({
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    شرکت یا سازمان فرستنده (یا انتخاب از شرکت‌های عضو)
+                    شرکت یا سازمان فرستنده
                   </label>
                   <input
                     list="companies-datalist"
@@ -3175,7 +3117,6 @@ function SecretariatNewLetterView({
               ))}
             </datalist>
 
-            {/* موضوع، طبقه‌بندی، محرمانگی و مهلت */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="md:col-span-2">
                 <label className="block text-xs font-bold text-slate-800 mb-1">
@@ -3266,7 +3207,6 @@ function SecretariatNewLetterView({
               </div>
             )}
 
-            {/* متن نامه */}
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1">متن و شرح نامه</label>
               <textarea
@@ -3278,7 +3218,6 @@ function SecretariatNewLetterView({
               />
             </div>
 
-            {/* امضاکننده و رونوشت */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -3346,7 +3285,6 @@ function SecretariatNewLetterView({
               </div>
             </div>
 
-            {/* پیوست‌های چندگانه (PDF, Word, Image) */}
             <div className="p-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <span className="text-xs font-bold text-slate-700">
@@ -3392,7 +3330,6 @@ function SecretariatNewLetterView({
               )}
             </div>
 
-            {/* دکمه‌های ذخیره پیش‌نویس یا ثبت قطعی */}
             <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-end gap-3">
               <button
                 type="button"
@@ -3425,7 +3362,6 @@ function SecretariatNewLetterView({
   );
 }
 
-// ۵-۵. کارهای ارجاع‌شده به من
 function SecretariatMyTasksView({ tasks, adminUser, onOpenLetter, onCompleteTask }) {
   const [responseTexts, setResponseTexts] = useState({});
 
@@ -3522,7 +3458,6 @@ function SecretariatMyTasksView({ tasks, adminUser, onOpenLetter, onCompleteTask
   );
 }
 
-// ۵-۶. گردش مکاتبات (Workflow Timeline)
 function SecretariatWorkflowView({ letters, onOpenLetter }) {
   const referredLetters = letters.filter((l) => (l.referrals?.length || 0) > 0);
 
@@ -3577,7 +3512,6 @@ function SecretariatWorkflowView({ letters, onOpenLetter }) {
   );
 }
 
-// ۵-۷. پیش‌نویس‌ها
 function SecretariatDraftsView({ drafts, onNewDraft, onEditDraft, onFinalizeDraft, onDeleteDraft }) {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -3648,7 +3582,6 @@ function SecretariatDraftsView({ drafts, onNewDraft, onEditDraft, onFinalizeDraf
   );
 }
 
-// ۵-۸. دفتر اندیکاتور الکترونیکی
 function SecretariatIndicatorView({ ledger, settings, onOpenLetter }) {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('همه');
@@ -3765,7 +3698,6 @@ function SecretariatIndicatorView({ ledger, settings, onOpenLetter }) {
   );
 }
 
-// ۵-۹. بایگانی
 function SecretariatArchiveView({ archivedLetters, onOpenLetter, onExportWord }) {
   const [search, setSearch] = useState('');
   const filtered = archivedLetters.filter(
@@ -3847,7 +3779,6 @@ function SecretariatArchiveView({ archivedLetters, onOpenLetter, onExportWord })
   );
 }
 
-// ۵-۱۰. حذف‌شده‌ها (Soft Delete)
 function SecretariatTrashView({ deletedLetters, isSystemAdmin, onRestore, onPermanentDelete }) {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -3916,7 +3847,6 @@ function SecretariatTrashView({ deletedLetters, isSystemAdmin, onRestore, onPerm
   );
 }
 
-// ۵-۱۱. قالب‌های آماده نامه
 function SecretariatTemplatesView({ templates, onSaveTemplate, onDeleteTemplate, onUseTemplate }) {
   const [editingTpl, setEditingTpl] = useState(null);
 
@@ -4053,7 +3983,6 @@ function SecretariatTemplatesView({ templates, onSaveTemplate, onDeleteTemplate,
   );
 }
 
-// ۵-۱۲. گزارش‌گیری و جست‌وجوی پیشرفته دبیرخانه (خروجی Excel و PDF)
 function SecretariatReportsView({ letters, onOpenLetter, showToast }) {
   const [filters, setFilters] = useState({
     indicator: '',
@@ -4136,7 +4065,6 @@ function SecretariatReportsView({ letters, onOpenLetter, showToast }) {
         </div>
       </div>
 
-      {/* فرم فیلترهای ترکیبی */}
       <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs no-print">
         <input
           type="text"
@@ -4205,7 +4133,6 @@ function SecretariatReportsView({ letters, onOpenLetter, showToast }) {
         </select>
       </div>
 
-      {/* جدول نتایج گزارش */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs">
@@ -4246,7 +4173,6 @@ function SecretariatReportsView({ letters, onOpenLetter, showToast }) {
   );
 }
 
-// ۵-۱۳. تنظیمات دبیرخانه الکترونیکی
 function SecretariatSettingsView({ secretariat, setSecretariat, isSystemAdmin, showToast }) {
   const [formSettings, setFormSettings] = useState(secretariat.settings);
 
@@ -4358,14 +4284,13 @@ function SecretariatSettingsView({ secretariat, setSecretariat, isSystemAdmin, s
 function LetterDetailModal({
   letter,
   orgSettings,
-  adminUser,
   onClose,
   onRefer,
   onUpdateStatus,
   onExportWord,
   onUploadNewWordVersion
 }) {
-  const [activeSubTab, setActiveSubTab] = useState('paper'); // paper | workflow | versions
+  const [activeSubTab, setActiveSubTab] = useState('paper');
   const [selectedTargets, setSelectedTargets] = useState(['expert']);
   const [referralType, setReferralType] = useState('جهت اقدام');
   const [deadline, setDeadline] = useState('');
@@ -4408,7 +4333,6 @@ function LetterDetailModal({
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
       <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto">
-        {/* نوار بالای مودال */}
         <div className="p-4 sm:p-5 bg-[#0b1f3a] text-white flex flex-wrap items-center justify-between gap-3 no-print">
           <div className="flex items-center gap-3">
             <span className="font-mono text-xs bg-blue-600 px-3 py-1 rounded-lg font-bold">
@@ -4437,7 +4361,6 @@ function LetterDetailModal({
           </div>
         </div>
 
-        {/* تب‌های داخلی نامه */}
         <div className="flex border-b border-slate-200 bg-slate-50 px-5 pt-2 gap-2 no-print">
           {[
             { id: 'paper', label: 'متن و سربرگ رسمی نامه' },
@@ -4488,7 +4411,6 @@ function LetterDetailModal({
 
           {activeSubTab === 'workflow' && (
             <div className="space-y-6">
-              {/* فرم ارجاع جدید (امکان انتخاب چند گیرنده هم‌زمان) */}
               <form onSubmit={handleSendReferral} className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-4 text-xs">
                 <h4 className="font-bold text-blue-950 text-sm">ارجاع نامه به اشخاص یا واحدهای سازمانی</h4>
                 <div>
@@ -4562,7 +4484,6 @@ function LetterDetailModal({
                 </div>
               </form>
 
-              {/* تاریخچه گردش */}
               <div className="space-y-2.5">
                 <h4 className="font-bold text-xs text-slate-700">سوابق گردش و ارجاعات قبلی:</h4>
                 {(letter.referrals || []).length === 0 ? (
@@ -4661,7 +4582,6 @@ function LetterDetailModal({
   );
 }
 
-// قالب سربرگ رسمی سازمانی برای پیش‌نمایش و چاپ PDF
 function OfficialLetterPaper({ letter, settings }) {
   return (
     <div className="bg-white border border-slate-300 rounded-xl p-8 sm:p-12 shadow-sm max-w-3xl mx-auto text-slate-900">
@@ -4678,7 +4598,7 @@ function OfficialLetterPaper({ letter, settings }) {
       <div className="flex justify-between items-start text-xs mb-8">
         <div className="space-y-1">
           <p>
-            <span className="text-slate-500">طبقه بندی: </span>
+            <span className="text-slate-500">طبقه‌بندی: </span>
             <b>{letter.confidentiality || 'عادی'}</b>
           </p>
           <p>
@@ -4737,7 +4657,7 @@ function OfficialLetterPaper({ letter, settings }) {
 }
 
 // ============================================================================
-// ۷. کامپوننت‌های قبلی پورتال و مدیریت شرکت‌ها (حفظ کامل بدون تغییر مخرب)
+// ۷. کامپوننت‌های پورتال و مدیریت شرکت‌ها
 // ============================================================================
 function PublicDirectoryView({ companies, stats, onSelectCompany }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -5244,7 +5164,6 @@ function AdminCompaniesListTab({
   companies,
   setCompanies,
   isSuperAdmin,
-  adminUser,
   onEdit,
   onViewPublic,
   showToast
@@ -5344,7 +5263,7 @@ function AdminCompaniesListTab({
   );
 }
 
-function AdminCompanyFormTab({ editingCompany, companies, setCompanies, adminUser, onDone, showToast }) {
+function AdminCompanyFormTab({ editingCompany, companies, setCompanies, onDone, showToast }) {
   const [formTab, setFormTab] = useState(1);
   const emptyCompany = {
     rowNumber: String(companies.length + 1),
@@ -5588,7 +5507,7 @@ function AdminCompanyFormTab({ editingCompany, companies, setCompanies, adminUse
   );
 }
 
-function AdminExcelImportTab({ companies, setCompanies, adminUser, onDone, showToast }) {
+function AdminExcelImportTab({ setCompanies, onDone, showToast }) {
   const [excelHeaders, setExcelHeaders] = useState([]);
   const [rawRows, setRawRows] = useState([]);
   const [columnMapping, setColumnMapping] = useState({});
@@ -5672,10 +5591,7 @@ function AdminExcelImportTab({ companies, setCompanies, adminUser, onDone, showT
 }
 
 function AdminSettingsTab({
-  companies,
   setCompanies,
-  accessPolicies,
-  setAccessPolicies,
   isSuperAdmin,
   onBackupJson,
   onExportExcel,
@@ -5707,3 +5623,4 @@ function AdminSettingsTab({
       </div>
     </div>
   );
+}
