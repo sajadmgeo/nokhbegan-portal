@@ -1,23 +1,263 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Building2, Users, Award, Package, Layers, Search,
-  ChevronLeft, ChevronDown, ArrowRight, Shield, Lock, Plus, Edit,
+  ChevronLeft, ArrowRight, Shield, Lock, Plus, Edit,
   Trash2, Upload, Download, CheckCircle, AlertCircle, X,
-  BarChart3, Settings, Eye, EyeOff, Globe, Phone,
-  MapPin, Calendar, FileText,
-  Check, Star, FileSpreadsheet, Printer,
-  History, Sparkles, SlidersHorizontal,
-  Mail, Inbox, Send, GitBranch, FileEdit, Archive, BookOpen,
-  FilePlus2, Bell, PanelRightClose, PanelRightOpen, Menu,
-  Clock, AlertTriangle, UserCheck,
-  FileCode, CheckSquare, CornerUpLeft,
-  Armchair, ClipboardCheck, ArrowUpDown, FileSignature, Scale,
-  TrendingUp, Award as AwardIcon, Rocket, ClipboardList, RotateCcw, Percent
+  BarChart3, Settings, LogOut, Eye, EyeOff, Globe, Phone,
+  MapPin, Calendar, FileText, Briefcase,
+  Check, RefreshCw, Star, Database, FileSpreadsheet, Printer,
+  History, UserCheck, Sparkles, SlidersHorizontal, Info,
+  Mail, Send, Inbox, Archive, FilePlus, FolderOpen, Bell,
+  Menu, PanelRightClose, PanelRightOpen, Clock, FileCheck,
+  AlertTriangle, CheckSquare, UserPlus, UserMinus, Car, RotateCcw,
+  Armchair, ClipboardCheck, Rocket, ClipboardList, Percent
 } from 'lucide-react';
 
 // ============================================================================
-// ۱. داده‌های اولیه شرکت‌ها
+// ۱. توابع کمکی عمومی، تقویم شمسی و تولید فایل استاندارد Word (.docx)
 // ============================================================================
+
+const toPersianDigits = (val) => {
+  if (val === null || val === undefined) return '';
+  const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  return String(val).replace(/\d/g, (x) => persianDigits[x]);
+};
+
+const generateSlug = (name) => {
+  return (
+    String(name || 'company')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^\u0600-\u06FFa-zA-Z0-9-]/g, '')
+      .toLowerCase() +
+    '-' +
+    Math.floor(100 + Math.random() * 900)
+  );
+};
+
+const getTodayJalali = () => {
+  try {
+    return new Intl.DateTimeFormat('fa-IR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+  } catch {
+    return '1405/01/20';
+  }
+};
+
+const getNowJalaliDateTime = () => {
+  try {
+    const d = new Date();
+    const datePart = new Intl.DateTimeFormat('fa-IR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(d);
+    const timePart = new Intl.DateTimeFormat('fa-IR', {
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(d);
+    return `${datePart} ${timePart}`;
+  } catch {
+    return '1405/01/20 10:30';
+  }
+};
+
+const maskNationalId = (nid) => {
+  const s = String(nid || '').trim();
+  if (s.length < 6) return s || '---';
+  return `${s.slice(0, 3)}****${s.slice(-3)}`;
+};
+
+const escapeXml = (str) =>
+  String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+// سازنده آرشیو ZIP بومی برای تولید فایل واقعی Microsoft Word (.docx)
+const buildSimpleZipBlob = (files) => {
+  const encoder = new TextEncoder();
+  const crcTable = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    crcTable[i] = c;
+  }
+  const crc32 = (buf) => {
+    let crc = 0xffffffff;
+    for (let i = 0; i < buf.length; i++) crc = crcTable[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8);
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  files.forEach(({ path, content }) => {
+    const nameBytes = encoder.encode(path);
+    const dataBytes = encoder.encode(content);
+    const crc = crc32(dataBytes);
+
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(localHeader.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0x0800, true);
+    lv.setUint16(8, 0, true);
+    lv.setUint16(10, 0, true);
+    lv.setUint16(12, 0, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, dataBytes.length, true);
+    lv.setUint32(22, dataBytes.length, true);
+    lv.setUint16(26, nameBytes.length, true);
+    lv.setUint16(28, 0, true);
+    localHeader.set(nameBytes, 30);
+
+    localParts.push(localHeader, dataBytes);
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(centralHeader.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0x0800, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint16(12, 0, true);
+    cv.setUint16(14, 0, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, dataBytes.length, true);
+    cv.setUint32(24, dataBytes.length, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint16(30, 0, true);
+    cv.setUint16(32, 0, true);
+    cv.setUint16(34, 0, true);
+    cv.setUint16(36, 0, true);
+    cv.setUint32(38, 0, true);
+    cv.setUint32(42, offset, true);
+    centralHeader.set(nameBytes, 46);
+
+    centralParts.push(centralHeader);
+    offset += localHeader.length + dataBytes.length;
+  });
+
+  const centralSize = centralParts.reduce((s, p) => s + p.length, 0);
+  const endRecord = new Uint8Array(22);
+  const ev = new DataView(endRecord.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(4, 0, true);
+  ev.setUint16(6, 0, true);
+  ev.setUint16(8, files.length, true);
+  ev.setUint16(10, files.length, true);
+  ev.setUint32(12, centralSize, true);
+  ev.setUint32(16, offset, true);
+  ev.setUint16(20, 0, true);
+
+  return new Blob([...localParts, ...centralParts, endRecord], {
+    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  });
+};
+
+const downloadDocxFromParagraphs = (filename, paragraphsXml) => {
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    ${paragraphsXml}
+    <w:sectPr><w:bidi/></w:sectPr>
+  </w:body>
+</w:document>`;
+
+  const blob = buildSimpleZipBlob([
+    { path: '[Content_Types].xml', content: contentTypes },
+    { path: '_rels/.rels', content: rels },
+    { path: 'word/document.xml', content: documentXml }
+  ]);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+const makeRtlParagraph = (text, bold = false, size = 24) => `
+  <w:p>
+    <w:pPr><w:bidi/><w:jc w:val="right"/></w:pPr>
+    <w:r>
+      <w:rPr>
+        <w:rtl/>
+        ${bold ? '<w:b/>' : ''}
+        <w:sz w:val="${size}"/>
+        <w:szCs w:val="${size}"/>
+      </w:rPr>
+      <w:t xml:space="preserve">${escapeXml(text)}</w:t>
+    </w:r>
+  </w:p>`;
+
+const exportLetterToDocx = (letter, settings) => {
+  const orgTitle = settings?.orgHeader || 'پارک فناوری پردیس — مرکز رشد فناوری نخبگان';
+  const bodyLines = String(letter.body || '').split('\n');
+  const xml = [
+    makeRtlParagraph(orgTitle, true, 28),
+    makeRtlParagraph(`شماره نامه: ${toPersianDigits(letter.indicatorNumber || 'پیش‌نویس')}`, true, 22),
+    makeRtlParagraph(`تاریخ: ${toPersianDigits(letter.letterDate || getTodayJalali())}`, false, 22),
+    makeRtlParagraph(`موضوع: ${letter.subject || ''}`, true, 24),
+    makeRtlParagraph(`گیرنده: ${letter.recipientOrg || ''} - ${letter.recipientPerson || ''}`, false, 22),
+    makeRtlParagraph('------------------------------------------------------------', false, 20),
+    ...bodyLines.map((line) => makeRtlParagraph(line, false, 24)),
+    makeRtlParagraph('', false, 22),
+    makeRtlParagraph(`امضاکننده: ${letter.signerName || ''} (${letter.signerTitle || ''})`, true, 22),
+    letter.copies ? makeRtlParagraph(`رونوشت: ${letter.copies}`, false, 20) : ''
+  ].join('');
+  downloadDocxFromParagraphs(`Letter_${letter.indicatorNumber || 'Draft'}.docx`, xml);
+};
+
+const exportAssetMinutesToDocx = (company, assets, settings) => {
+  const orgTitle = settings?.orgHeader || 'پارک فناوری پردیس — مرکز رشد فناوری نخبگان';
+  const rowsXml = assets.map((item, idx) => {
+    const q = computeAssetQuantities(item);
+    return makeRtlParagraph(
+      `${toPersianDigits(idx + 1)}. ${item.itemName} (کد: ${toPersianDigits(item.assetCode || '-')}) | اولیه: ${toPersianDigits(q.initialQty)} | اضافه‌شده: ${toPersianDigits(q.addedQty)} | مسترد: ${toPersianDigits(q.returnedQty)} | موجودی فعلی: ${toPersianDigits(q.currentQty)} | وضعیت: ${item.confirmationStatus}`,
+      false,
+      22
+    );
+  });
+
+  const xml = [
+    makeRtlParagraph(orgTitle, true, 28),
+    makeRtlParagraph(`صورت‌جلسه رسمی تحویل و تحول اموال و تجهیزات — شرکت ${company?.name || ''}`, true, 26),
+    makeRtlParagraph(`تاریخ تنظیم صورت‌جلسه: ${toPersianDigits(getTodayJalali())}`, false, 22),
+    makeRtlParagraph(`واحد استقرار: ${company?.unitNumber || '---'} | نماینده شرکت: ${company?.ceoName || '---'}`, false, 22),
+    makeRtlParagraph('------------------------------------------------------------', false, 20),
+    ...rowsXml,
+    makeRtlParagraph('', false, 22),
+    makeRtlParagraph('امضا و تأیید نماینده مرکز رشد فناوری نخبگان: ____________________', true, 22),
+    makeRtlParagraph(`امضا و تأیید الکترونیکی نماینده شرکت (${company?.name || ''}): ____________________`, true, 22)
+  ].join('');
+
+  downloadDocxFromParagraphs(`Asset_Minutes_${company?.slug || 'Company'}.docx`, xml);
+};
+
+// ============================================================================
+// ۲. داده‌های اولیه و ثابت‌های ماژول‌های پنج‌گانه سامانه
+// ============================================================================
+
 const INITIAL_COMPANIES = [
   {
     id: 'comp-1',
@@ -57,20 +297,20 @@ const INITIAL_COMPANIES = [
     field: 'هوش مصنوعی و فناوری اطلاعات',
     techLicense: 'دارد',
     techLicenseTopic: 'سامانه پردازش تصویر صنعتی و کنترل کیفیت هوشمند',
-    productCount: 3,
+    productCount: 2,
     products: [
       {
         name: 'بیناکنترل پلاس',
         brand: 'BinaControl',
         status: 'تجاری‌سازی شده',
-        description: 'سامانه بینایی ماشین جهت تشخیص عیوب خطوط تولید خودروسازی و بسته‌بندی با دقت ۹۹.۴ درصد.',
+        description: 'سامانه بینایی ماشین جهت تشخیص عیوب خطوط تولید خودروسازی و بسته‌بندی.',
         patent: 'ثبت اختراع شماره ۱۰۴۵۸۹'
       },
       {
         name: 'پلتفرم تحلیل متن فارسی نگار',
         brand: 'NegarNLP',
         status: 'فروش آزمایشی',
-        description: 'موتور پردازش زبان طبیعی و خلاصه‌سازی اسناد سازمانی ویژه سازمان‌های دولتی و بانکی.',
+        description: 'موتور پردازش زبان طبیعی و خلاصه‌سازی اسناد سازمانی.',
         patent: 'در حال بررسی'
       }
     ],
@@ -90,7 +330,7 @@ const INITIAL_COMPANIES = [
     salesYear4: '۱۸.۰ میلیارد تومان',
     exitDate: '',
     exitResult: '',
-    notes: 'شرکت منتخب جشنواره فناوری پردیس در سال ۱۴۰۲',
+    notes: 'شرکت منتخب جشنواره فناوری پردیس',
     shortDesc: 'توسعه‌دهنده سامانه‌های بینایی ماشین صنعتی و پردازش زبان طبیعی فارسی برای خطوط تولید هوشمند.',
     logoUrl: '',
     isPublic: true,
@@ -99,8 +339,7 @@ const INITIAL_COMPANIES = [
     publishSales: false,
     locationStatus: 'مستقر در مرکز رشد',
     history: [
-      { date: '1403/07/20', user: 'مدیر سامانه', action: 'تأیید انتشار عمومی شناسنامه شرکت' },
-      { date: '1403/05/10', user: 'کارشناس ارزیابی', action: 'به‌روزرسانی آمار نیروی انسانی و فروش سال سوم' }
+      { date: '1403/07/20', user: 'مدیر سامانه', action: 'تأیید انتشار عمومی شناسنامه شرکت' }
     ]
   },
   {
@@ -141,7 +380,7 @@ const INITIAL_COMPANIES = [
     field: 'زیست‌فناوری و سلامت',
     techLicense: 'دارد',
     techLicenseTopic: 'تولید کیت‌های تشخیص سریع مولکولی بیماری‌های عفونی',
-    productCount: 2,
+    productCount: 1,
     products: [
       {
         name: 'کیت تشخیص سریع PCR-Rapid',
@@ -175,9 +414,7 @@ const INITIAL_COMPANIES = [
     publishInvestment: true,
     publishSales: false,
     locationStatus: 'مستقر در مرکز رشد',
-    history: [
-      { date: '1403/06/15', user: 'مدیر سامانه', action: 'افزودن به فهرست شرکت‌های منتخب' }
-    ]
+    history: []
   },
   {
     id: 'comp-3',
@@ -217,13 +454,13 @@ const INITIAL_COMPANIES = [
     field: 'ماشین‌آلات پیشرفته و رباتیک',
     techLicense: 'دارد',
     techLicenseTopic: 'طراحی و ساخت بازوهای رباتیک صنعتی ۶ درجه آزادی و AGV',
-    productCount: 4,
+    productCount: 1,
     products: [
       {
         name: 'ربات حمل بار خودران سپهر AGV-500',
         brand: 'SepehrBot',
         status: 'تولید انبوه',
-        description: 'ربات هوشمند جابجایی پالت در انبارهای لجستیک با ناوبری لیزری بدون نیاز به خط‌کشی.',
+        description: 'ربات هوشمند جابجایی پالت در انبارهای لجستیک با ناوبری لیزری.',
         patent: 'ثبت اختراع شماره ۱۰۱۲۳۴'
       }
     ],
@@ -260,11 +497,11 @@ const INITIAL_COMPANIES = [
     level: 'سطح ۳ (پیش‌رشد)',
     name: 'هسته فناور نانوپوشش آریا',
     slug: 'nanopooshesh-aria',
-    nationalId: '',
-    registrationNumber: '',
+    nationalId: '14011998877',
+    registrationNumber: '615420',
     companyType: 'هسته فناور',
     establishedDate: '1403/01/20',
-    registeredCapital: '',
+    registeredCapital: '۱,۰۰۰,۰۰۰,۰۰۰ ریال',
     ceoName: 'مهندس محمدجواد کریمی',
     ceoPhone: '09351234567',
     ceoNationalId: '0012345678',
@@ -326,143 +563,7 @@ const INITIAL_COMPANIES = [
     publishSales: false,
     locationStatus: 'مستقر در فضای اشتراکی',
     history: []
-  },
-  {
-    id: 'comp-5',
-    rowNumber: '5',
-    status: 'خارج‌شده (موفق)',
-    level: 'فارغ‌التحصیل مرکز رشد',
-    name: 'الکترونیک دقیق تابان انرژی',
-    slug: 'taban-energy-electronics',
-    nationalId: '14005556677',
-    registrationNumber: '489521',
-    companyType: 'سهامی خاص',
-    establishedDate: '1396/08/10',
-    registeredCapital: '۱۵,۰۰۰,۰۰۰,۰۰۰ ریال',
-    ceoName: 'دکتر سعید فرهادی',
-    ceoPhone: '09126667788',
-    ceoNationalId: '0054321876',
-    ceoBirthDate: '1360/09/18',
-    ceoDegree: 'دکتری مهندسی برق - قدرت',
-    ceoUniversity: 'دانشگاه تهران',
-    chairmanName: 'مهندس مهدی بهرامی',
-    chairmanPhone: '09128889900',
-    unitNumber: 'منتقل شده به فاز ۲ پارک',
-    unitArea: '۲۵۰ مترمربع',
-    postalCode: '1657145250',
-    visitable: 'بله',
-    workshopCode: '0214589333',
-    economicCode: '411321654987',
-    landline: '021-76251200',
-    email: 'info@taban-power.ir',
-    website: 'https://taban-power.ir',
-    initialStaff: 4,
-    thirdYearStaff: 21,
-    totalStaff: 35,
-    femaleStaff: 11,
-    knowledgeBased: 'دانش‌بنیان تولیدی',
-    recruitmentBase: 'فراخوان ۱۷ مرکز رشد',
-    field: 'برق، الکترونیک و انرژی',
-    techLicense: 'دارد',
-    techLicenseTopic: 'اینورترهای خورشیدی متصل به شبکه و سامانه‌های مدیریت باتری',
-    productCount: 3,
-    products: [
-      {
-        name: 'اینورتر خورشیدی سه‌فاز ۵۰ کیلووات',
-        brand: 'TabanGrid',
-        status: 'تولید انبوه',
-        description: 'اینورتر هوشمند با راندمان ۹۸.۶ درصد دارای سیستم مانیتورینگ ابری.',
-        patent: 'ثبت اختراع شماره ۹۸۷۴۵'
-      }
-    ],
-    entryDate: '1398/01/15',
-    preIncubationEndDate: '1398/07/15',
-    incubationEntryDate: '1398/08/01',
-    threeYearEndDate: '1401/08/01',
-    renewalDate: '1402/08/01',
-    membershipStatus: 'خروج موفق به پارک فناوری',
-    targetAudience: 'نیروگاه‌های خورشیدی، صنایع بزرگ و پیمانکاران EPC',
-    investmentRaised: 'بله',
-    investmentAmount: '۳۰ میلیارد تومان',
-    revenueModel: 'فروش مستقیم تجهیزات و قراردادهای کلید در دست',
-    salesYear1: '۴.۰ میلیارد تومان',
-    salesYear2: '۱۴.۵ میلیارد تومان',
-    salesYear3: '۳۲.۰ میلیارد تومان',
-    salesYear4: '۵۸.۰ میلیارد تومان',
-    exitDate: '1402/09/01',
-    exitResult: 'استقرار مستقل در پارک فناوری پردیس',
-    notes: 'یکی از شرکت‌های پیشرو در حوزه انرژی‌های تجدیدپذیر',
-    shortDesc: 'طراحی و تولید اینورترهای خورشیدی متصل به شبکه، رکتیفایرهای صنعتی و سامانه‌های مدیریت ذخیره انرژی.',
-    logoUrl: '',
-    isPublic: true,
-    isFeatured: false,
-    publishInvestment: true,
-    publishSales: false,
-    locationStatus: 'مستقر در پارک فناوری',
-    history: []
   }
-];
-
-const DB_FIELD_DEFINITIONS = [
-  { key: 'rowNumber', label: 'ردیف', group: 'هویتی و ثبتی', aliases: ['ردیف', 'شماره ردیف', 'row'] },
-  { key: 'status', label: 'وضعیت', group: 'هویتی و ثبتی', aliases: ['وضعیت', 'وضعیت فعلی', 'status'] },
-  { key: 'level', label: 'سطح‌بندی', group: 'هویتی و ثبتی', aliases: ['سطح‌بندی', 'سطح بندی', 'سطح', 'level'] },
-  { key: 'name', label: 'نام شرکت / هسته فناور', group: 'هویتی و ثبتی', required: true, aliases: ['نام شرکت', 'نام شرکت/هسته فناور', 'نام شرکت / هسته فناور', 'نام هسته', 'نام', 'company'] },
-  { key: 'nationalId', label: 'شناسه ملی', group: 'هویتی و ثبتی', aliases: ['شناسه ملی', 'شناسه ملی شرکت', 'کد ملی شرکت'] },
-  { key: 'registrationNumber', label: 'شماره ثبت', group: 'هویتی و ثبتی', aliases: ['شماره ثبت', 'شماره ثبتی'] },
-  { key: 'companyType', label: 'نوع شرکت', group: 'هویتی و ثبتی', aliases: ['نوع شرکت', 'شخصیت حقوقی', 'نوع'] },
-  { key: 'establishedDate', label: 'تاریخ تأسیس', group: 'هویتی و ثبتی', aliases: ['تاریخ تأسیس', 'تاریخ تاسیس', 'سال تاسیس', 'سال تأسیس'] },
-  { key: 'registeredCapital', label: 'سرمایه ثبتی', group: 'هویتی و ثبتی', aliases: ['سرمایه ثبتی', 'سرمایه'] },
-  { key: 'shortDesc', label: 'معرفی کوتاه شرکت', group: 'هویتی و ثبتی', aliases: ['معرفی کوتاه', 'معرفی', 'شرح فعالیت', 'توضیح کوتاه'] },
-  { key: 'ceoName', label: 'نام مدیرعامل', group: 'مدیرعامل و هیئت‌مدیره', aliases: ['نام مدیرعامل', 'مدیرعامل', 'نام و نام خانوادگی مدیرعامل'] },
-  { key: 'ceoPhone', label: 'شماره تماس مدیرعامل', group: 'مدیرعامل و هیئت‌مدیره', aliases: ['شماره تماس', 'شماره تماس مدیرعامل', 'موبایل مدیرعامل', 'تلفن همراه مدیرعامل'] },
-  { key: 'ceoNationalId', label: 'شماره ملی مدیرعامل', group: 'مدیرعامل و هیئت‌مدیره', aliases: ['شماره ملی مدیرعامل', 'کد ملی مدیرعامل'] },
-  { key: 'ceoBirthDate', label: 'تاریخ تولد مدیرعامل', group: 'مدیرعامل و هیئت‌مدیره', aliases: ['تاریخ تولد', 'تاریخ تولد مدیرعامل'] },
-  { key: 'ceoDegree', label: 'آخرین مدرک تحصیلی', group: 'مدیرعامل و هیئت‌مدیره', aliases: ['آخرین مدرک تحصیلی', 'مدرک تحصیلی', 'تحصیلات'] },
-  { key: 'ceoUniversity', label: 'دانشگاه محل تحصیل', group: 'مدیرعامل و هیئت‌مدیره', aliases: ['دانشگاه محل تحصیل', 'دانشگاه'] },
-  { key: 'chairmanName', label: 'نام رئیس هیئت‌مدیره', group: 'مدیرعامل و هیئت‌مدیره', aliases: ['نام رئیس هیئت‌مدیره', 'رئیس هیئت مدیره', 'نام رئیس هیئت مدیره'] },
-  { key: 'chairmanPhone', label: 'شماره تماس رئیس هیئت‌مدیره', group: 'مدیرعامل و هیئت‌مدیره', aliases: ['شماره تماس رئیس هیئت‌مدیره', 'تلفن رئیس هیئت مدیره', 'شماره تماس رئیس هیئت مدیره'] },
-  { key: 'unitNumber', label: 'شماره واحد', group: 'استقرار و ارتباطی', aliases: ['شماره واحد', 'واحد', 'محل استقرار'] },
-  { key: 'unitArea', label: 'متراژ واحد', group: 'استقرار و ارتباطی', aliases: ['متراژ واحد', 'متراژ', 'مساحت'] },
-  { key: 'postalCode', label: 'کدپستی', group: 'استقرار و ارتباطی', aliases: ['کدپستی', 'کد پستی'] },
-  { key: 'visitable', label: 'قابلیت بازدید', group: 'استقرار و ارتباطی', aliases: ['قابلیت بازدید', 'بازدید'] },
-  { key: 'locationStatus', label: 'وضعیت استقرار', group: 'استقرار و ارتباطی', aliases: ['وضعیت استقرار', 'نوع استقرار'] },
-  { key: 'workshopCode', label: 'کد کارگاهی', group: 'استقرار و ارتباطی', aliases: ['کد کارگاهی'] },
-  { key: 'economicCode', label: 'کد اقتصادی', group: 'استقرار و ارتباطی', aliases: ['کد اقتصادی'] },
-  { key: 'landline', label: 'شماره ثابت', group: 'استقرار و ارتباطی', aliases: ['شماره ثابت', 'تلفن ثابت', 'تلفن شرکت'] },
-  { key: 'email', label: 'ایمیل رسمی شرکت', group: 'استقرار و ارتباطی', aliases: ['ایمیل رسمی شرکت', 'ایمیل', 'پست الکترونیک'] },
-  { key: 'website', label: 'آدرس وبگاه', group: 'استقرار و ارتباطی', aliases: ['آدرس وبگاه', 'وبگاه', 'وبسایت', 'سایت'] },
-  { key: 'initialStaff', label: 'نیروی انسانی ابتدای ورود', group: 'نیروی انسانی', aliases: ['نیروی انسانی ابتدای ورود', 'نیروی اولیه'] },
-  { key: 'thirdYearStaff', label: 'نیروی انسانی انتهای سال سوم', group: 'نیروی انسانی', aliases: ['نیروی انسانی انتهای سال سوم', 'نیروی سال سوم'] },
-  { key: 'totalStaff', label: 'تعداد کل نیروی انسانی سال', group: 'نیروی انسانی', aliases: ['تعداد کل نیروی انسانی سال', 'تعداد کل نیروی انسانی', 'نیروی انسانی', 'تعداد پرسنل'] },
-  { key: 'femaleStaff', label: 'تعداد بانوان', group: 'نیروی انسانی', aliases: ['تعداد بانوان', 'نیروی انسانی بانوان', 'بانوان'] },
-  { key: 'knowledgeBased', label: 'دانش‌بنیان', group: 'فناوری و محصولات', aliases: ['دانش‌بنیان', 'دانش بنیان', 'وضعیت دانش بنیان'] },
-  { key: 'recruitmentBase', label: 'پایگاه جذب', group: 'فناوری و محصولات', aliases: ['پایگاه جذب', 'نحوه جذب'] },
-  { key: 'field', label: 'حوزه فعالیت', group: 'فناوری و محصولات', aliases: ['حوزه فعالیت', 'حوزه فناوری', 'زمینه فعالیت'] },
-  { key: 'techLicense', label: 'مجوز فناوری', group: 'فناوری و محصولات', aliases: ['مجوز فناوری', 'وضعیت مجوز فناوری'] },
-  { key: 'techLicenseTopic', label: 'موضوع مجوز فناوری', group: 'فناوری و محصولات', aliases: ['موضوع مجوز یا عنوان پیشنهادی مجوز فناوری', 'موضوع مجوز فناوری', 'عنوان مجوز'] },
-  { key: 'productCount', label: 'تعداد محصول', group: 'فناوری و محصولات', aliases: ['تعداد محصول', 'تعداد محصولات'] },
-  { key: 'productNamesRaw', label: 'نام محصولات', group: 'فناوری و محصولات', aliases: ['نام محصولات', 'محصولات', 'نام محصول'] },
-  { key: 'brandNamesRaw', label: 'نام برند', group: 'فناوری و محصولات', aliases: ['نام برند', 'برند'] },
-  { key: 'patentRaw', label: 'ثبت اختراع', group: 'فناوری و محصولات', aliases: ['ثبت اختراع', 'اختراع'] },
-  { key: 'productStatusRaw', label: 'آخرین وضعیت محصول', group: 'فناوری و محصولات', aliases: ['آخرین وضعیت محصول', 'وضعیت محصول'] },
-  { key: 'entryDate', label: 'تاریخ ورود به مرکز رشد', group: 'عضویت در مرکز رشد', aliases: ['تاریخ ورود به مرکز رشد', 'تاریخ ورود'] },
-  { key: 'preIncubationEndDate', label: 'تاریخ اتمام پیش‌رشد', group: 'عضویت در مرکز رشد', aliases: ['تاریخ اتمام پیش‌رشد', 'تاریخ پایان پیش رشد', 'تاریخ اتمام پیش رشد'] },
-  { key: 'incubationEntryDate', label: 'تاریخ ورود به دوره رشد', group: 'عضویت در مرکز رشد', aliases: ['تاریخ ورود به دوره رشد', 'ورود به رشد'] },
-  { key: 'membershipStatus', label: 'وضعیت شرکت در مرکز', group: 'عضویت در مرکز رشد', aliases: ['وضعیت شرکت', 'وضعیت عضویت'] },
-  { key: 'threeYearEndDate', label: 'پایان سه سال عضویت', group: 'عضویت در مرکز رشد', aliases: ['پایان سه سال عضویت', 'تاریخ پایان سه سال عضویت', 'اتمام دوره رشد'] },
-  { key: 'renewalDate', label: 'تمدید عضویت', group: 'عضویت در مرکز رشد', aliases: ['تمدید عضویت', 'تاریخ تمدید عضویت'] },
-  { key: 'targetAudience', label: 'گروه مخاطب', group: 'کسب‌وکار و فروش', aliases: ['گروه مخاطب', 'مشتریان', 'گروه مخاطبان'] },
-  { key: 'investmentRaised', label: 'جذب سرمایه', group: 'کسب‌وکار و فروش', aliases: ['جذب سرمایه', 'وضعیت جذب سرمایه'] },
-  { key: 'investmentAmount', label: 'میزان سرمایه‌گذاری', group: 'کسب‌وکار و فروش', aliases: ['میزان سرمایه‌گذاری', 'میزان سرمایه گذاری', 'مبلغ سرمایه'] },
-  { key: 'revenueModel', label: 'مدل درآمدی', group: 'کسب‌وکار و فروش', aliases: ['مدل درآمدی'] },
-  { key: 'salesYear1', label: 'فروش سال اول', group: 'کسب‌وکار و فروش', aliases: ['فروش سال اول', 'فروش سال ۱'] },
-  { key: 'salesYear2', label: 'فروش سال دوم', group: 'کسب‌وکار و فروش', aliases: ['فروش سال دوم', 'فروش سال ۲'] },
-  { key: 'salesYear3', label: 'فروش سال سوم', group: 'کسب‌وکار و فروش', aliases: ['فروش سال سوم', 'فروش سال ۳'] },
-  { key: 'salesYear4', label: 'فروش سال چهارم', group: 'کسب‌وکار و فروش', aliases: ['فروش سال چهارم', 'فروش سال ۴'] },
-  { key: 'exitDate', label: 'تاریخ خروج', group: 'خروج و توضیحات', aliases: ['تاریخ خروج'] },
-  { key: 'exitResult', label: 'نتیجه خروج', group: 'خروج و توضیحات', aliases: ['نتیجه خروج'] },
-  { key: 'notes', label: 'توضیحات', group: 'خروج و توضیحات', aliases: ['توضیحات', 'توضیحات تکمیلی', 'ملاحظات'] }
 ];
 
 const DEFAULT_ACCESS_POLICIES = {
@@ -474,18 +575,25 @@ const DEFAULT_ACCESS_POLICIES = {
   membershipDates: 'public'
 };
 
-// ============================================================================
-// ۲. داده‌ها و ثابت‌های ماژول «دبیرخانه الکترونیکی»
-// ============================================================================
-const SECRETARIAT_ROLES = [
-  { id: 'system_admin', label: 'مدیر سیستم', userDisplayName: 'مهندس محمدی (مدیر سیستم)', level: 5 },
-  { id: 'secretariat_officer', label: 'مسئول دبیرخانه', userDisplayName: 'سرکار خانم کریمی (مسئول دبیرخانه)', level: 4 },
-  { id: 'org_manager', label: 'مدیر مرکز رشد', userDisplayName: 'دکتر رضایی (مدیر مرکز رشد)', level: 4 },
-  { id: 'expert', label: 'کارشناس مرکز رشد', userDisplayName: 'مهندس حسینی (کارشناس مرکز رشد)', level: 2 },
-  { id: 'company_rep', label: 'نماینده شرکت پیش‌رشد (نانوپوشش آریا)', userDisplayName: 'مهندس کریمی (نماینده هسته نانوپوشش آریا)', level: 1, companyId: 'comp-4' },
-  { id: 'viewer', label: 'کاربران مشاهده‌کننده', userDisplayName: 'کاربر مهمان / ناظر', level: 1 }
+const DB_FIELD_DEFINITIONS = [
+  { key: 'rowNumber', label: 'ردیف', group: 'هویتی و ثبتی', aliases: ['ردیف', 'شماره ردیف'] },
+  { key: 'status', label: 'وضعیت', group: 'هویتی و ثبتی', aliases: ['وضعیت', 'وضعیت فعلی'] },
+  { key: 'level', label: 'سطح‌بندی', group: 'هویتی و ثبتی', aliases: ['سطح‌بندی', 'سطح بندی', 'سطح'] },
+  { key: 'name', label: 'نام شرکت / هسته فناور', group: 'هویتی و ثبتی', required: true, aliases: ['نام شرکت', 'نام شرکت/هسته فناور', 'نام هسته'] },
+  { key: 'nationalId', label: 'شناسه ملی', group: 'هویتی و ثبتی', aliases: ['شناسه ملی', 'شناسه ملی شرکت'] },
+  { key: 'registrationNumber', label: 'شماره ثبت', group: 'هویتی و ثبتی', aliases: ['شماره ثبت'] },
+  { key: 'companyType', label: 'نوع شرکت', group: 'هویتی و ثبتی', aliases: ['نوع شرکت', 'شخصیت حقوقی'] },
+  { key: 'establishedDate', label: 'تاریخ تأسیس', group: 'هویتی و ثبتی', aliases: ['تاریخ تأسیس', 'تاریخ تاسیس'] },
+  { key: 'ceoName', label: 'نام مدیرعامل', group: 'مدیرعامل', aliases: ['نام مدیرعامل', 'مدیرعامل'] },
+  { key: 'ceoPhone', label: 'شماره تماس مدیرعامل', group: 'مدیرعامل', aliases: ['شماره تماس', 'موبایل مدیرعامل'] },
+  { key: 'unitNumber', label: 'شماره واحد', group: 'استقرار', aliases: ['شماره واحد', 'واحد'] },
+  { key: 'field', label: 'حوزه فعالیت', group: 'فناوری', aliases: ['حوزه فعالیت', 'حوزه فناوری'] },
+  { key: 'knowledgeBased', label: 'دانش‌بنیان', group: 'فناوری', aliases: ['دانش‌بنیان', 'دانش بنیان'] },
+  { key: 'totalStaff', label: 'تعداد کل نیروی انسانی', group: 'نیروی انسانی', aliases: ['تعداد کل نیروی انسانی', 'نیروی انسانی'] },
+  { key: 'femaleStaff', label: 'تعداد بانوان', group: 'نیروی انسانی', aliases: ['تعداد بانوان', 'بانوان'] }
 ];
 
+// ثابت‌های دبیرخانه الکترونیکی
 const INCOMING_STATUSES = [
   'ثبت اولیه',
   'در انتظار ارجاع',
@@ -506,1017 +614,570 @@ const REFERRAL_TYPES = [
   'جهت پیگیری'
 ];
 
-const toPersianDigits = (val) => {
-  if (val === null || val === undefined) return '';
-  const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
-  return String(val).replace(/\d/g, (x) => persianDigits[x]);
-};
-
-const generateSlug = (name) => {
-  return (
-    String(name || 'company')
-      .trim()
-      .replace(/\s+/g, '-')
-      .replace(/[^\u0600-\u06FFa-zA-Z0-9-]/g, '')
-      .toLowerCase() +
-    '-' +
-    Math.floor(100 + Math.random() * 900)
-  );
-};
-
-const getTodayJalali = () => {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US-u-ca-persian', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).formatToParts(new Date());
-    const y = parts.find((p) => p.type === 'year')?.value || '1405';
-    const m = parts.find((p) => p.type === 'month')?.value || '01';
-    const d = parts.find((p) => p.type === 'day')?.value || '01';
-    return `${y}/${m}/${d}`;
-  } catch {
-    return '1405/01/15';
-  }
-};
-
-const getNowJalaliDateTime = () => {
-  const now = new Date();
-  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  return `${getTodayJalali()} ${time}`;
-};
-
-const escapeXml = (str) =>
-  String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-
-// ساخت فایل ZIP استاندارد بدون فشرده‌سازی برای تولید فایل‌های معتبر Microsoft Word (.docx)
-const buildSimpleZipBlob = (files) => {
-  const encoder = new TextEncoder();
-  const crcTable = new Uint32Array(256);
-  for (let i = 0; i < 256; i++) {
-    let c = i;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    crcTable[i] = c;
-  }
-  const crc32 = (bytes) => {
-    let crc = 0xffffffff;
-    for (let i = 0; i < bytes.length; i++) crc = crcTable[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
-    return (crc ^ 0xffffffff) >>> 0;
-  };
-
-  const localParts = [];
-  const centralParts = [];
-  let offset = 0;
-
-  files.forEach((f) => {
-    const nameBytes = encoder.encode(f.name);
-    const dataBytes = encoder.encode(f.content);
-    const crc = crc32(dataBytes);
-
-    const localHeader = new Uint8Array(30 + nameBytes.length);
-    const lv = new DataView(localHeader.buffer);
-    lv.setUint32(0, 0x04034b50, true);
-    lv.setUint16(4, 20, true);
-    lv.setUint16(6, 0x0800, true);
-    lv.setUint16(8, 0, true);
-    lv.setUint16(10, 0, true);
-    lv.setUint16(12, 0, true);
-    lv.setUint32(14, crc, true);
-    lv.setUint32(18, dataBytes.length, true);
-    lv.setUint32(22, dataBytes.length, true);
-    lv.setUint16(26, nameBytes.length, true);
-    lv.setUint16(28, 0, true);
-    localHeader.set(nameBytes, 30);
-
-    localParts.push(localHeader, dataBytes);
-
-    const centralHeader = new Uint8Array(46 + nameBytes.length);
-    const cv = new DataView(centralHeader.buffer);
-    cv.setUint32(0, 0x02014b50, true);
-    cv.setUint16(4, 20, true);
-    cv.setUint16(6, 20, true);
-    cv.setUint16(8, 0x0800, true);
-    cv.setUint16(10, 0, true);
-    cv.setUint16(12, 0, true);
-    cv.setUint16(14, 0, true);
-    cv.setUint32(16, crc, true);
-    cv.setUint32(20, dataBytes.length, true);
-    cv.setUint32(24, dataBytes.length, true);
-    cv.setUint16(28, nameBytes.length, true);
-    cv.setUint16(30, 0, true);
-    cv.setUint16(32, 0, true);
-    cv.setUint16(34, 0, true);
-    cv.setUint16(36, 0, true);
-    cv.setUint32(38, 0, true);
-    cv.setUint32(42, offset, true);
-    centralHeader.set(nameBytes, 46);
-
-    centralParts.push(centralHeader);
-    offset += localHeader.length + dataBytes.length;
-  });
-
-  const centralSize = centralParts.reduce((s, p) => s + p.length, 0);
-  const eocd = new Uint8Array(22);
-  const ev = new DataView(eocd.buffer);
-  ev.setUint32(0, 0x06054b50, true);
-  ev.setUint16(4, 0, true);
-  ev.setUint16(6, 0, true);
-  ev.setUint16(8, files.length, true);
-  ev.setUint16(10, files.length, true);
-  ev.setUint32(12, centralSize, true);
-  ev.setUint32(16, offset, true);
-  ev.setUint16(20, 0, true);
-
-  return new Blob([...localParts, ...centralParts, eocd], {
-    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  });
-};
-
-const exportLetterToDocx = (letter, settings) => {
-  const paragraphsXml = String(letter.body || '')
-    .split('\n')
-    .map(
-      (line) =>
-        `<w:p><w:pPr><w:bidi/><w:jc w:val="both"/><w:spacing w:after="120"/></w:pPr><w:r><w:rPr><w:rtl/><w:sz w:val="24"/></w:rPr><w:t>${escapeXml(
-          line
-        )}</w:t></w:r></w:p>`
-    )
-    .join('');
-
-  const ccXml =
-    letter.ccList && letter.ccList.length > 0
-      ? `<w:p><w:pPr><w:bidi/><w:spacing w:before="240"/></w:pPr><w:r><w:rPr><w:b/><w:rtl/><w:sz w:val="20"/></w:rPr><w:t>رونوشت:</w:t></w:r></w:p>` +
-        letter.ccList
-          .map(
-            (cc) =>
-              `<w:p><w:pPr><w:bidi/></w:pPr><w:r><w:rPr><w:rtl/><w:sz w:val="20"/></w:rPr><w:t>• ${escapeXml(
-                cc
-              )}</w:t></w:r></w:p>`
-          )
-          .join('')
-      : '';
-
-  const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>`;
-
-  const relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>`;
-
-  const recipientLine =
-    letter.type === 'incoming'
-      ? `فرستنده: ${letter.senderName || ''} (${letter.senderOrg || ''})`
-      : `گیرنده محترم: ${letter.recipientName || ''} ${letter.recipientOrg ? `(${letter.recipientOrg})` : ''}`;
-
-  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body>
-    <w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:rtl/><w:sz w:val="24"/></w:rPr><w:t>بسمه تعالی</w:t></w:r></w:p>
-    <w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:rtl/><w:color w:val="0F294A"/><w:sz w:val="26"/></w:rPr><w:t>${escapeXml(
-      settings?.orgHeaderTitle || 'معاونت علمی، فناوری و اقتصاد دانش‌بنیان ریاست جمهوری'
-    )}</w:t></w:r></w:p>
-    <w:p><w:pPr><w:bidi/><w:jc w:val="center"/><w:spacing w:after="200"/></w:pPr><w:r><w:rPr><w:rtl/><w:color w:val="1D4ED8"/><w:sz w:val="22"/></w:rPr><w:t>${escapeXml(
-      settings?.orgSubTitle || 'پارک فناوری پردیس — مرکز رشد فناوری نخبگان'
-    )}</w:t></w:r></w:p>
-    <w:p><w:pPr><w:bidi/></w:pPr><w:r><w:rPr><w:b/><w:rtl/><w:sz w:val="22"/></w:rPr><w:t>شماره نامه: ${escapeXml(
-      toPersianDigits(letter.indicatorNumber || 'پیش‌نویس')
-    )}   |   تاریخ: ${escapeXml(toPersianDigits(letter.letterDate || ''))}   |   طبقه‌بندی: ${escapeXml(
-      letter.confidentiality || 'عادی'
-    )}</w:t></w:r></w:p>
-    <w:p><w:pPr><w:bidi/><w:spacing w:before="140"/></w:pPr><w:r><w:rPr><w:b/><w:rtl/><w:sz w:val="24"/></w:rPr><w:t>${escapeXml(
-      recipientLine
-    )}</w:t></w:r></w:p>
-    <w:p><w:pPr><w:bidi/><w:spacing w:after="180"/></w:pPr><w:r><w:rPr><w:b/><w:rtl/><w:sz w:val="24"/></w:rPr><w:t>موضوع: ${escapeXml(
-      letter.subject || ''
-    )}</w:t></w:r></w:p>
-    ${paragraphsXml}
-    <w:p><w:pPr><w:bidi/><w:jc w:val="left"/><w:spacing w:before="300"/></w:pPr><w:r><w:rPr><w:b/><w:rtl/><w:sz w:val="24"/></w:rPr><w:t>${escapeXml(
-      letter.signerName || 'دکتر حمیدرضا رضایی'
-    )}</w:t></w:r></w:p>
-    <w:p><w:pPr><w:bidi/><w:jc w:val="left"/></w:pPr><w:r><w:rPr><w:rtl/><w:sz w:val="22"/></w:rPr><w:t>${escapeXml(
-      letter.signerTitle || 'رئیس مرکز رشد فناوری نخبگان'
-    )}</w:t></w:r></w:p>
-    ${ccXml}
-    <w:sectPr><w:bidi/></w:sectPr>
-  </w:body>
-</w:document>`;
-
-  const blob = buildSimpleZipBlob([
-    { name: '[Content_Types].xml', content: contentTypesXml },
-    { name: '_rels/.rels', content: relsXml },
-    { name: 'word/document.xml', content: documentXml }
-  ]);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `نامه_${(letter.indicatorNumber || 'پیش_نویس').replace(/\//g, '-')}.docx`;
-  a.click();
-  URL.revokeObjectURL(url);
-};
-
 const INITIAL_SECRETARIAT_STATE = {
   settings: {
-    currentYear: '1405',
-    incomingPattern: '{YEAR}/و/{SEQ}',
-    outgoingPattern: '{YEAR}/ص/{SEQ}',
-    internalPattern: '{YEAR}/د/{SEQ}',
+    incomingPrefix: 'و-۱۴۰۵-',
+    outgoingPrefix: 'ص-۱۴۰۵-',
     nextIncomingSeq: 103,
     nextOutgoingSeq: 202,
-    nextInternalSeq: 51,
-    orgHeaderTitle: 'معاونت علمی، فناوری و اقتصاد دانش‌بنیان ریاست جمهوری',
-    orgSubTitle: 'پارک فناوری پردیس — مرکز رشد فناوری نخبگان'
+    orgHeader: 'پارک فناوری پردیس — مرکز رشد فناوری نخبگان'
   },
   templates: [
     {
       id: 'tpl-1',
-      title: 'ابلاغ پذیرش و استقرار در مرکز رشد',
-      category: 'پذیرش و ارزیابی',
-      subjectTemplate: 'ابلاغ مصوبه شورای فناوری در خصوص پذیرش {{گیرنده}}',
-      bodyTemplate:
-        'با سلام و احترام؛\n\nبه استحضار می‌رساند طرح فناورانه ارائه شده از سوی {{گیرنده}} در جلسه شورای پذیرش و ارزیابی مرکز رشد فناوری نخبگان مطرح و با استقرار آن مجموعه در دوره رشد موافقت گردید.\n\nمقتضی است ظرف مدت ۱۰ روز کاری جهت تکمیل مدارک و انعقاد قرارداد استقرار به دبیرخانه مرکز رشد مراجعه فرمایید.',
-      signerName: 'دکتر حمیدرضا رضایی',
-      signerTitle: 'رئیس مرکز رشد فناوری نخبگان'
+      title: 'نامه معرفی شرکت به صندوق نوآوری و شکوفایی',
+      subject: 'معرفی شرکت عضو مرکز رشد جهت بهره‌مندی از تسهیلات',
+      body: 'با سلام و احترام،\nبدینوسیله شرکت فناور مستقر در مرکز رشد فناوری نخبگان پارک فناوری پردیس جهت بررسی طرح و بهره‌مندی از حمایت‌های مالی و اعتباری به حضور معرفی می‌گردد.'
     },
     {
       id: 'tpl-2',
-      title: 'معرفی‌نامه به صندوق پژوهش و فناوری',
-      category: 'حمایت مالی و تسهیلات',
-      subjectTemplate: 'معرفی شرکت {{گیرنده}} جهت بررسی طرح تسهیلات نمونه صنعتی',
-      bodyTemplate:
-        'با سلام و احترام؛\n\nبدینوسیله شرکت فناور {{گیرنده}} که از واحدهای فعال و مستقر در مرکز رشد فناوری نخبگان پارک فناوری پردیس می‌باشد، جهت بررسی طرح توسعه محصول و بهره‌مندی از تسهیلات حمایتی به حضور معرفی می‌گردد.',
-      signerName: 'دکتر حمیدرضا رضایی',
-      signerTitle: 'رئیس مرکز رشد فناوری نخبگان'
+      title: 'ابلاغ مصوبه شورای فناوری مرکز رشد',
+      subject: 'ابلاغ مصوبه تمدید / ارتقاء دوره استقرار',
+      body: 'با سلام و احترام،\nپیرو جلسه شورای فناوری مرکز رشد فناوری نخبگان، بدینوسیله مصوبه مربوط به وضعیت استقرار آن شرکت جهت استحضار و اقدام مقتضی ابلاغ می‌گردد.'
     }
   ],
   letters: [
     {
       id: 'let-1',
-      type: 'incoming',
-      indicatorNumber: '1405/و/101',
-      year: '1405',
-      seqNumber: 101,
+      direction: 'incoming',
+      indicatorNumber: 'و-۱۴۰۵-۱۰۱',
+      senderLetterNumber: '۱۴۰۵/۲۴/۸۹۰',
+      letterDate: '1405/01/12',
+      receivedDate: '1405/01/13',
       senderType: 'حقوقی',
-      senderName: 'دکتر امیرحسین کاظمی',
-      senderOrg: 'پارس هوش مصنوعی پردیس',
-      originLetterNumber: '1405-88/پ',
-      letterDate: '1405/01/14',
-      receiptDate: '1405/01/15',
-      recipientName: 'ریاست محترم مرکز رشد فناوری نخبگان',
-      recipientOrg: 'مرکز رشد فناوری نخبگان',
-      subject: 'درخواست تمدید قرارداد استقرار و تخصیص فضای آزمایشگاهی',
-      summary: 'درخواست تمدید دوره رشد برای سال چهارم و افزایش فضای کارگاهی',
-      body: 'با سلام و احترام؛\n\nبا توجه به تجاری‌سازی سامانه بینایی ماشین بیناکنترل پلاس و افزایش نیروی انسانی متخصص شرکت به ۲۲ نفر، خواهشمند است با تمدید قرارداد استقرار این شرکت در ساختمان نخبگان موافقت فرمایید.',
+      senderName: 'دکتر کامران شریفی',
+      senderOrg: 'معاونت فناوری پارک فناوری پردیس',
+      subject: 'فراخوان ارزیابی سالانه شرکت‌های مستقر در مراکز رشد',
+      summary: 'ارسال شاخص‌های ارزیابی عملکرد شرکت‌های دوره رشد و پیش‌رشد جهت تکمیل فرم‌های مربوطه.',
       priority: 'فوری',
       confidentiality: 'عادی',
       status: 'ارجاع‌شده',
       deadline: '1405/01/25',
-      assignedToRole: 'expert',
-      assignedToName: 'مهندس حسینی (کارشناس مرکز رشد)',
-      isDraft: false,
+      assignedTo: 'کارشناس ارزیابی',
       isDeleted: false,
-      ccList: ['واحد پشتیبانی و اموال مرکز رشد'],
-      signerName: 'دکتر امیرحسین کاظمی',
-      signerTitle: 'مدیرعامل شرکت پارس هوش مصنوعی پردیس',
       attachments: [],
-      versions: [{ version: 1, date: '1405/01/15 09:30', user: 'سرکار خانم کریمی', note: 'ثبت اولیه در دبیرخانه' }],
       referrals: [
         {
-          id: 'ref-101',
-          fromUser: 'دکتر رضایی (مدیر مرکز رشد)',
-          toRole: 'expert',
-          toName: 'مهندس حسینی (کارشناس مرکز رشد)',
-          referralType: 'جهت بررسی',
+          id: 'ref-1',
+          fromUser: 'مسئول دبیرخانه',
+          toUsers: ['کارشناس ارزیابی', 'مدیر مجموعه'],
+          type: 'جهت اقدام',
           deadline: '1405/01/25',
-          instructions: 'شاخص‌های رشد فروش و اشتغال شرکت بررسی و گزارش ارزیابی ارائه شود.',
-          date: '1405/01/15 11:00',
-          response: '',
-          completed: false
+          note: 'لطفاً به شرکت‌های مستقر اطلاع‌رسانی و مدارک جمع‌آوری شود.',
+          date: '1405/01/13 10:15',
+          response: ''
         }
-      ]
+      ],
+      versions: []
     },
     {
       id: 'let-2',
-      type: 'outgoing',
-      indicatorNumber: '1405/ص/201',
-      year: '1405',
-      seqNumber: 201,
-      senderName: 'مرکز رشد فناوری نخبگان',
-      senderOrg: 'پارک فناوری پردیس',
-      letterDate: '1405/01/18',
-      recipientName: 'مدیرعامل محترم شرکت زیست‌فناوران نوین ژنوم',
-      recipientOrg: 'زیست‌فناوران نوین ژنوم',
-      subject: 'تأییدیه استقرار و معرفی به معاونت علمی ریاست جمهوری',
-      summary: 'صدور گواهی اشتغال به فعالیت فناورانه جهت اخذ تاییدیه دانش‌بنیان',
-      body: 'با سلام و احترام؛\n\nگواهی می‌شود شرکت زیست‌فناوران نوین ژنوم به شماره ثبت ۵۶۸۹۱۲ در مرکز رشد فناوری نخبگان پارک فناوری پردیس مستقر بوده و در زمینه تولید کیت‌های تشخیص مولکولی فعالیت می‌نماید.',
-      priority: 'عادی',
-      confidentiality: 'عادی',
-      status: 'ارسال‌شده',
-      deadline: '',
-      assignedToRole: 'secretariat_officer',
-      assignedToName: 'سرکار خانم کریمی (مسئول دبیرخانه)',
-      isDraft: false,
-      isDeleted: false,
-      ccList: ['پرونده شرکت در دبیرخانه'],
+      direction: 'outgoing',
+      indicatorNumber: 'ص-۱۴۰۵-۲۰۱',
+      letterDate: '1405/01/15',
+      recipientOrg: 'صندوق پژوهش و فناوری پردیس',
+      recipientPerson: 'مدیریت محترم عامل',
+      subject: 'معرفی شرکت پارس هوش مصنوعی پردیس جهت دریافت ضمانت‌نامه',
+      body: 'با سلام و احترام،\nبدینوسیله شرکت «پارس هوش مصنوعی پردیس» عضو فعال مرکز رشد فناوری نخبگان جهت بررسی پرونده و صدور ضمانت‌نامه شرکت در مناقصه معرفی می‌گردد.',
       signerName: 'دکتر حمیدرضا رضایی',
       signerTitle: 'رئیس مرکز رشد فناوری نخبگان',
+      copies: 'واحد امور شرکت‌ها، بایگانی',
+      confidentiality: 'عادی',
+      status: 'ثبت نهایی و ارسال‌شده',
+      isDraft: false,
+      isDeleted: false,
       attachments: [],
-      versions: [{ version: 1, date: '1405/01/18 14:20', user: 'سرکار خانم کریمی', note: 'ثبت نهایی نامه صادره' }],
-      referrals: []
-    }
-  ],
-  indicatorLedger: [
-    {
-      id: 'ind-1',
-      indicatorNumber: '1405/و/101',
-      type: 'وارده',
-      year: '1405',
-      seq: 101,
-      letterId: 'let-1',
-      subject: 'درخواست تمدید قرارداد استقرار و تخصیص فضای آزمایشگاهی',
-      party: 'پارس هوش مصنوعی پردیس',
-      registeredAt: '1405/01/15 09:30',
-      registeredBy: 'سرکار خانم کریمی (مسئول دبیرخانه)',
-      isLetterDeleted: false
-    },
-    {
-      id: 'ind-2',
-      indicatorNumber: '1405/ص/201',
-      type: 'صادره',
-      year: '1405',
-      seq: 201,
-      letterId: 'let-2',
-      subject: 'تأییدیه استقرار و معرفی به معاونت علمی ریاست جمهوری',
-      party: 'زیست‌فناوران نوین ژنوم',
-      registeredAt: '1405/01/18 14:20',
-      registeredBy: 'سرکار خانم کریمی (مسئول دبیرخانه)',
-      isLetterDeleted: false
+      referrals: [],
+      versions: [
+        { version: 1, date: '1405/01/15 11:00', user: 'مسئول دبیرخانه', note: 'ثبت نهایی و تخصیص شماره اندیکاتور' }
+      ]
     }
   ],
   auditLogs: [
-    { id: 'log-1', date: '1405/01/18 14:20', user: 'سرکار خانم کریمی', action: 'ثبت قطعی نامه صادره 1405/ص/201' },
-    { id: 'log-2', date: '1405/01/15 11:00', user: 'دکتر رضایی', action: 'ارجاع نامه 1405/و/101 به کارشناس ارزیابی' }
+    { id: 'al-1', date: '1405/01/13 10:15', user: 'مسئول دبیرخانه', action: 'ثبت نامه وارده و-۱۴۰۵-۱۰۱' },
+    { id: 'al-2', date: '1405/01/15 11:00', user: 'مسئول دبیرخانه', action: 'ثبت نهایی نامه صادره ص-۱۴۰۵-۲۰۱' }
   ]
 };
 
-// ============================================================================
-// ۲-ب. داده‌ها و ثابت‌های ماژول «مدیریت اموال و تجهیزات تحویلی»
-// ============================================================================
-const DEFAULT_ASSET_CATALOG = [
-  { id: 'cat-1', name: 'میز', category: 'مبلمان اداری' },
-  { id: 'cat-2', name: 'صندلی', category: 'مبلمان اداری' },
-  { id: 'cat-3', name: 'کتابخانه', category: 'تجهیزات نگهداری' },
-  { id: 'cat-4', name: 'سطل زباله', category: 'ملزومات اداری' },
-  { id: 'cat-5', name: 'تخته وایت‌برد', category: 'تجهیزات آموزشی و جلسات' },
-  { id: 'cat-6', name: 'کلید واحد', category: 'تأسیسات و دسترسی' },
-  { id: 'cat-7', name: 'سایر تجهیزات', category: 'تجهیزات تخصصی' }
+// ثابت‌های ماژول اموال و تجهیزات
+const DEFAULT_ASSET_ITEMS = [
+  'میز',
+  'صندلی',
+  'کتابخانه',
+  'سطل زباله',
+  'تخته وایت‌برد',
+  'کلید واحد',
+  'سایر تجهیزات'
 ];
 
-const ASSET_DELIVERY_STATUSES = [
-  'پیش‌نویس',
-  'ارسال‌شده برای تأیید شرکت',
-  'تأییدشده توسط شرکت',
-  'دارای مغایرت',
-  'نیازمند اصلاح',
-  'نهایی‌شده'
-];
-
-const ASSET_EVENT_TYPES = [
-  { id: 'initial', label: 'تحویل اولیه', sign: 1 },
-  { id: 'additional', label: 'تحویل تکمیلی', sign: 1 },
-  { id: 'return', label: 'استرداد به مرکز رشد', sign: -1 },
-  { id: 'replace', label: 'تعویض کالا', sign: 0 },
-  { id: 'shortage', label: 'ثبت کسری', sign: -1 },
-  { id: 'damage', label: 'ثبت خرابی', sign: 0 },
-  { id: 'loss', label: 'ثبت مفقودی', sign: -1 },
-  { id: 'correction', label: 'اصلاح اطلاعات با ثبت دلیل', sign: 0 }
-];
-
-const INITIAL_ASSETS_STATE = {
-  catalog: DEFAULT_ASSET_CATALOG,
-  items: [
-    {
-      id: 'ast-101',
-      assetCode: 'PRP-1405-001',
-      companyId: 'comp-1',
-      companyName: 'پارس هوش مصنوعی پردیس',
-      itemName: 'میز',
-      category: 'مبلمان اداری',
-      serialNumber: 'DSK-8821',
-      physicalCondition: 'سالم و نو',
-      description: 'میز کارشناسی MDF به همراه فایل کشودار سه طبقه',
-      deliveryDate: '1405/01/15',
-      deliveredBy: 'مهندس حسینی (کارشناس مرکز رشد)',
-      receivedBy: 'دکتر امیرحسین کاظمی',
-      imageUrl: '',
-      deliveryStatus: 'نهایی‌شده',
-      companyConfirmedBy: 'دکتر امیرحسین کاظمی',
-      companyConfirmedAt: '1405/01/16 10:20',
-      discrepancyNote: '',
-      discrepancyImage: '',
-      events: [
-        {
-          id: 'ev-1',
-          type: 'initial',
-          typeLabel: 'تحویل اولیه',
-          quantityDelta: 4,
-          date: '1405/01/15 09:00',
-          user: 'مهندس حسینی (کارشناس مرکز رشد)',
-          reason: 'تحویل اولیه مبلمان واحد ۳۰۴ در ابتدای قرارداد سال ۱۴۰۵',
-          condition: 'سالم و نو'
-        },
-        {
-          id: 'ev-2',
-          type: 'additional',
-          typeLabel: 'تحویل تکمیلی',
-          quantityDelta: 2,
-          date: '1405/01/20 14:15',
-          user: 'مهندس حسینی (کارشناس مرکز رشد)',
-          reason: 'افزایش پرسنل فنی شرکت و تخصیص ۲ میز کار جدید',
-          condition: 'سالم'
-        }
-      ]
-    },
-    {
-      id: 'ast-102',
-      assetCode: 'PRP-1405-002',
-      companyId: 'comp-1',
-      companyName: 'پارس هوش مصنوعی پردیس',
-      itemName: 'صندلی',
-      category: 'مبلمان اداری',
-      serialNumber: 'CHR-4410',
-      physicalCondition: 'سالم',
-      description: 'صندلی چرخ‌دار ارگونومیک کارشناسی مشکی',
-      deliveryDate: '1405/01/15',
-      deliveredBy: 'مهندس حسینی (کارشناس مرکز رشد)',
-      receivedBy: 'دکتر امیرحسین کاظمی',
-      imageUrl: '',
-      deliveryStatus: 'ارسال‌شده برای تأیید شرکت',
-      companyConfirmedBy: '',
-      companyConfirmedAt: '',
-      discrepancyNote: '',
-      discrepancyImage: '',
-      events: [
-        {
-          id: 'ev-3',
-          type: 'initial',
-          typeLabel: 'تحویل اولیه',
-          quantityDelta: 5,
-          date: '1405/01/15 09:05',
-          user: 'مهندس حسینی (کارشناس مرکز رشد)',
-          reason: 'تحویل اولیه صندلی‌های کارشناسی واحد ۳۰۴',
-          condition: 'سالم'
-        },
-        {
-          id: 'ev-4',
-          type: 'additional',
-          typeLabel: 'تحویل تکمیلی',
-          quantityDelta: 2,
-          date: '1405/01/21 11:00',
-          user: 'مهندس حسینی (کارشناس مرکز رشد)',
-          reason: 'افزایش تعداد صندلی‌ها متناسب با میزهای جدید',
-          condition: 'سالم'
-        },
-        {
-          id: 'ev-5',
-          type: 'return',
-          typeLabel: 'استرداد به مرکز رشد',
-          quantityDelta: -1,
-          date: '1405/01/22 16:30',
-          user: 'مهندس حسینی (کارشناس مرکز رشد)',
-          reason: 'استرداد ۱ عدد صندلی به انبار مرکز رشد به دلیل خرابی جک',
-          condition: 'نیازمند تعمیر'
-        }
-      ]
-    },
-    {
-      id: 'ast-103',
-      assetCode: 'PRP-1405-003',
-      companyId: 'comp-1',
-      companyName: 'پارس هوش مصنوعی پردیس',
-      itemName: 'کلید واحد',
-      category: 'تأسیسات و دسترسی',
-      serialNumber: 'KEY-304',
-      physicalCondition: 'سالم',
-      description: '۳ عدد کلید اصلی درب واحد ۳۰۴ به همراه تگ هوشمند تردد',
-      deliveryDate: '1405/01/15',
-      deliveredBy: 'مهندس حسینی (کارشناس مرکز رشد)',
-      receivedBy: 'دکتر امیرحسین کاظمی',
-      imageUrl: '',
-      deliveryStatus: 'تأییدشده توسط شرکت',
-      companyConfirmedBy: 'دکتر امیرحسین کاظمی',
-      companyConfirmedAt: '1405/01/16 10:25',
-      discrepancyNote: '',
-      discrepancyImage: '',
-      events: [
-        {
-          id: 'ev-6',
-          type: 'initial',
-          typeLabel: 'تحویل اولیه',
-          quantityDelta: 3,
-          date: '1405/01/15 09:10',
-          user: 'مهندس حسینی (کارشناس مرکز رشد)',
-          reason: 'تحویل کلیدهای واحد مستقر',
-          condition: 'سالم'
-        }
-      ]
-    },
-    {
-      id: 'ast-104',
-      assetCode: 'PRP-1405-004',
-      companyId: 'comp-2',
-      companyName: 'زیست‌فناوران نوین ژنوم',
-      itemName: 'کتابخانه',
-      category: 'تجهیزات نگهداری',
-      serialNumber: 'LIB-108',
-      physicalCondition: 'دارای خط و خش جزئی',
-      description: 'کمد و کتابخانه دو درب زونکن‌خور آزمایشگاهی',
-      deliveryDate: '1405/01/18',
-      deliveredBy: 'مهندس حسینی (کارشناس مرکز رشد)',
-      receivedBy: 'دکتر مریم احمدی',
-      imageUrl: '',
-      deliveryStatus: 'دارای مغایرت',
-      companyConfirmedBy: '',
-      companyConfirmedAt: '',
-      discrepancyNote: 'قفل درب سمت چپ کتابخانه کلید ندارد و شیشه طبقه بالا ترک جزئی دارد.',
-      discrepancyImage: '',
-      events: [
-        {
-          id: 'ev-7',
-          type: 'initial',
-          typeLabel: 'تحویل اولیه',
-          quantityDelta: 2,
-          date: '1405/01/18 10:00',
-          user: 'مهندس حسینی (کارشناس مرکز رشد)',
-          reason: 'تحویل کتابخانه به واحد ۱۰۸',
-          condition: 'دارای خط و خش جزئی'
-        }
-      ]
-    },
-    {
-      id: 'ast-105',
-      assetCode: 'PRP-1405-005',
-      companyId: 'comp-3',
-      companyName: 'مکاترونیک و رباتیک سپهر',
-      itemName: 'تخته وایت‌برد',
-      category: 'تجهیزات آموزشی و جلسات',
-      serialNumber: 'WBD-902',
-      physicalCondition: 'سالم',
-      description: 'تخته وایت‌برد مغناطیسی ۱۲۰×۲۰۰ سانتی‌متر با پایه متحرک',
-      deliveryDate: '1405/01/12',
-      deliveredBy: 'مهندس حسینی (کارشناس مرکز رشد)',
-      receivedBy: 'مهندس علیرضا شریفی',
-      imageUrl: '',
-      deliveryStatus: 'نهایی‌شده',
-      companyConfirmedBy: 'مهندس علیرضا شریفی',
-      companyConfirmedAt: '1405/01/13 09:40',
-      discrepancyNote: '',
-      discrepancyImage: '',
-      events: [
-        {
-          id: 'ev-8',
-          type: 'initial',
-          typeLabel: 'تحویل اولیه',
-          quantityDelta: 2,
-          date: '1405/01/12 11:30',
-          user: 'مهندس حسینی (کارشناس مرکز رشد)',
-          reason: 'تحویل تخته وایت‌برد اتاق جلسات سوله ۴',
-          condition: 'سالم'
-        }
-      ]
-    }
-  ],
-  logs: [
-    { id: 'alog-1', date: '1405/01/22 16:30', user: 'مهندس حسینی (کارشناس مرکز رشد)', action: 'ثبت استرداد ۱ عدد صندلی برای شرکت پارس هوش مصنوعی پردیس' },
-    { id: 'alog-2', date: '1405/01/19 12:10', user: 'دکتر مریم احمدی', action: 'اعلام مغایرت برای کتابخانه تحویلی شرکت زیست‌فناوران نوین ژنوم' }
-  ]
-};
-
-// محاسبه خودکار موجودی اولیه، اضافه‌شده، مستردشده و تعداد فعلی هر قلم اموال
-const computeAssetQuantities = (asset) => {
-  const events = Array.isArray(asset?.events) ? asset.events : [];
+const computeAssetQuantities = (item) => {
   let initialQty = 0;
   let addedQty = 0;
   let returnedQty = 0;
-  let currentQty = 0;
-  let lastChangeDate = asset?.deliveryDate || '';
-
-  events.forEach((ev) => {
+  (item.events || []).forEach((ev) => {
     const delta = Number(ev.quantityDelta) || 0;
-    if (ev.type === 'initial') {
+    if (ev.type === 'تحویل اولیه') {
       initialQty += delta;
     } else if (delta > 0) {
       addedQty += delta;
     } else if (delta < 0) {
       returnedQty += Math.abs(delta);
     }
-    currentQty += delta;
-    if (ev.date) lastChangeDate = ev.date;
   });
-
-  return {
-    initialQty,
-    addedQty,
-    returnedQty,
-    currentQty: Math.max(0, currentQty),
-    lastChangeDate
-  };
+  const currentQty = Math.max(0, initialQty + addedQty - returnedQty);
+  return { initialQty, addedQty, returnedQty, currentQty };
 };
 
-// تولید فایل Word (.docx) برای صورت‌جلسه رسمی تحویل و تحول اموال شرکت
-const exportAssetMinutesToDocx = (company, companyAssets, settings) => {
-  const rowsXml = (companyAssets || [])
-    .map((asset, idx) => {
-      const q = computeAssetQuantities(asset);
-      return `<w:p><w:pPr><w:bidi/><w:spacing w:after="80"/></w:pPr><w:r><w:rPr><w:rtl/><w:sz w:val="22"/></w:rPr><w:t>${escapeXml(
-        `${toPersianDigits(idx + 1)}. ${asset.itemName} (کد: ${toPersianDigits(asset.assetCode)}) — موجودی فعلی: ${toPersianDigits(
-          q.currentQty
-        )} عدد | وضعیت: ${asset.physicalCondition || 'سالم'} | تأیید شرکت: ${asset.deliveryStatus}`
-      )}</w:t></w:r></w:p>`;
-    })
-    .join('');
-
-  const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-officedocument.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>`;
-
-  const relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>`;
-
-  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body>
-    <w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:rtl/><w:sz w:val="24"/></w:rPr><w:t>بسمه تعالی</w:t></w:r></w:p>
-    <w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:rtl/><w:color w:val="0F294A"/><w:sz w:val="26"/></w:rPr><w:t>${escapeXml(
-      settings?.orgSubTitle || 'پارک فناوری پردیس — مرکز رشد فناوری نخبگان'
-    )}</w:t></w:r></w:p>
-    <w:p><w:pPr><w:bidi/><w:jc w:val="center"/><w:spacing w:after="200"/></w:pPr><w:r><w:rPr><w:b/><w:rtl/><w:sz w:val="24"/></w:rPr><w:t>صورت‌جلسه رسمی تحویل و تحول اموال و تجهیزات اداری</w:t></w:r></w:p>
-    <w:p><w:pPr><w:bidi/><w:spacing w:after="140"/></w:pPr><w:r><w:rPr><w:rtl/><w:sz w:val="22"/></w:rPr><w:t>${escapeXml(
-      `در تاریخ ${toPersianDigits(getTodayJalali())}، اقلام و تجهیزات مشروحه ذیل از طرف مرکز رشد فناوری نخبگان به شرکت/هسته فناور «${
-        company?.name || ''
-      }» (واحد استقرار: ${company?.unitNumber || 'تعیین‌شده'}) تحویل گردید:`
-    )}</w:t></w:r></w:p>
-    ${rowsXml}
-    <w:p><w:pPr><w:bidi/><w:spacing w:before="300"/></w:pPr><w:r><w:rPr><w:b/><w:rtl/><w:sz w:val="22"/></w:rPr><w:t>امضا و تأیید نماینده مرکز رشد فناوری نخبگان                    امضا و تأیید نماینده شرکت (${escapeXml(
-      company?.ceoName || ''
-    )})</w:t></w:r></w:p>
-    <w:sectPr><w:bidi/></w:sectPr>
-  </w:body>
-</w:document>`;
-
-  const blob = buildSimpleZipBlob([
-    { name: '[Content_Types].xml', content: contentTypesXml },
-    { name: '_rels/.rels', content: relsXml },
-    { name: 'word/document.xml', content: documentXml }
-  ]);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `صورت_جلسه_اموال_${(company?.name || 'شرکت').replace(/\s+/g, '_')}.docx`;
-  a.click();
-  URL.revokeObjectURL(url);
-};
-
-// کامپوننت نمایش آواتار یا لوگوی شرکت
-function CompanyAvatar({ company, size = 'md' }) {
-  const dims =
-    size === 'lg'
-      ? 'w-16 h-16 sm:w-20 sm:h-20 text-xl sm:text-2xl rounded-2xl'
-      : size === 'sm'
-      ? 'w-9 h-9 text-xs rounded-xl'
-      : 'w-12 h-12 text-base rounded-xl';
-
-  if (company?.logoUrl) {
-    return (
-      <img
-        src={company.logoUrl}
-        alt={company.name}
-        className={`${dims} object-cover bg-white border border-slate-200 shrink-0`}
-      />
-    );
-  }
-
-  const label = (company?.name || 'ش')
-    .replace(/شرکت|هسته فناور|فناوری|مهندسی/g, '')
-    .trim()
-    .slice(0, 2);
-
-  return (
-    <div
-      className={`${dims} bg-gradient-to-br from-blue-600 to-sky-400 text-white font-extrabold flex items-center justify-center shadow-sm shrink-0`}
-    >
-      {label || 'نخ'}
-    </div>
-  );
-}
-
-// ============================================================================
-// ۲-ج. داده‌ها و ثابت‌های ماژول «تبدیل وضعیت شرکت (پیش‌رشد به رشد)»
-// ============================================================================
-const BMC_BLOCKS_CONFIG = [
-  { id: 'keyPartners', title: '۸. شرکای کلیدی', en: 'Key Partners', hint: 'تأمین‌کنندگان، آزمایشگاه‌ها، شرکای فناور و راهبردی' },
-  { id: 'keyActivities', title: '۷. فعالیت‌های کلیدی', en: 'Key Activities', hint: 'تحقیق و توسعه، تولید، بازاریابی و پشتیبانی' },
-  { id: 'keyResources', title: '۶. منابع کلیدی', en: 'Key Resources', hint: 'تیم متخصص، دانش فنی، ثبت اختراع، تجهیزات' },
-  { id: 'valuePropositions', title: '۲. ارزش پیشنهادی', en: 'Value Propositions', hint: 'مزیت رقابتی و مشکلی که برای مشتری حل می‌کنید' },
-  { id: 'customerRelationships', title: '۴. ارتباط با مشتریان', en: 'Customer Relationships', hint: 'پشتیبانی اختصاصی، قراردادهای نگهداری، سلف‌سرویس' },
-  { id: 'channels', title: '۳. کانال‌های توزیع و ارتباط', en: 'Channels', hint: 'فروش مستقیم B2B، نمایندگان فروش، پلتفرم آنلاین' },
-  { id: 'customerSegments', title: '۱. بخش‌های مشتریان', en: 'Customer Segments', hint: 'صنایع هدف، سازمان‌ها و گروه‌های خریدار اصلی' },
-  { id: 'costStructure', title: '۹. ساختار هزینه‌ها', en: 'Cost Structure', hint: 'هزینه‌های تحقیق و توسعه، نیروی انسانی، مواد اولیه' },
-  { id: 'revenueStreams', title: '۵. جریان‌های درآمدی', en: 'Revenue Streams', hint: 'فروش محصول، حق اشتراک، خدمات مهندسی و لایسنس' }
-];
-
-const UPGRADE_SECTION_TITLES = {
-  sec1: 'بخش اول: اطلاعات ثبتی و ساختار حقوقی شرکت',
-  sec2: 'بخش دوم: گزارش پیشرفت فنی محصول یا ایده محوری',
-  sec3: 'بخش سوم: بوم مدل کسب‌وکار شرکت (BMC)',
-  sec4: 'بخش چهارم: برنامه یک‌ساله ورود به بازار و تجاری‌سازی',
-  sec5: 'بخش پنجم: مستندات فروش و قراردادهای تجاری'
-};
-
-const createEmptyUpgradeRequest = (company) => {
-  const nowStr = getNowJalaliDateTime();
-  return {
-    id: 'upg-' + Date.now(),
-    companyId: company.id,
-    companyName: company.name,
-    status: 'در حال تکمیل', // شروع‌نشده | در حال تکمیل | ارسال‌شده به مرکز رشد | در حال بررسی | عودت‌شده برای اصلاح | ارسال مجدد | تأییدشده و تبدیل وضعیت به رشد
-    submittedAt: '',
-    approvedAt: '',
-    assignedExpert: 'مهندس حسینی (کارشناس مرکز رشد)',
-    internalExpertNotes: '',
-    generalReturnNote: '',
-    sectionCorrections: {
-      sec1: { needsFix: false, note: '' },
-      sec2: { needsFix: false, note: '' },
-      sec3: { needsFix: false, note: '' },
-      sec4: { needsFix: false, note: '' },
-      sec5: { needsFix: false, note: '' }
-    },
-    // بخش اول: اطلاعات ثبتی و ساختار حقوقی (دریافت خودکار از پرونده شرکت)
-    registrationInfo: {
-      fullCompanyName: company.name || '',
-      companyType: company.companyType === 'هسته فناور' ? 'سهامی خاص' : (company.companyType || 'سهامی خاص'),
-      nationalId: company.nationalId || '',
-      registrationNumber: company.registrationNumber || '',
-      establishedDate: company.establishedDate || '',
-      headquartersAddress: company.unitNumber ? `پارک فناوری پردیس، ${company.unitNumber}` : '',
-      ceoName: company.ceoName || '',
-      companyPhone: company.landline || company.ceoPhone || '',
-      officialEmail: company.email || '',
-      shareholders: [
+const INITIAL_ASSETS_STATE = {
+  items: [
+    {
+      id: 'ast-1',
+      companyId: 'comp-1',
+      companyName: 'پارس هوش مصنوعی پردیس',
+      itemName: 'میز',
+      assetCode: 'PRK-1041',
+      category: 'مبلمان اداری',
+      physicalCondition: 'سالم و نو',
+      notes: 'میز کارشناسی MDF به همراه کشو',
+      deliveryDate: '1400/02/05',
+      deliveredBy: 'کارشناس اموال مرکز رشد',
+      receivedBy: 'دکتر امیرحسین کاظمی',
+      confirmationStatus: 'نهایی‌شده',
+      companyConfirmation: {
+        confirmedBy: 'دکتر امیرحسین کاظمی',
+        date: '1400/02/06 11:30',
+        discrepancyNote: ''
+      },
+      events: [
         {
-          id: 'sh-1',
-          name: company.ceoName || '',
-          nationalCode: company.ceoNationalId || '',
-          sharePercent: 60,
-          role: 'مدیرعامل و عضو هیئت‌مدیره'
+          id: 'ev-1',
+          type: 'تحویل اولیه',
+          quantityDelta: 4,
+          date: '1400/02/05',
+          user: 'کارشناس اموال',
+          reason: 'تحویل تجهیز اولیه واحد ۳۰۴'
+        },
+        {
+          id: 'ev-2',
+          type: 'تحویل تکمیلی',
+          quantityDelta: 2,
+          date: '1402/04/10',
+          user: 'کارشناس اموال',
+          reason: 'افزایش نیروی انسانی شرکت'
         }
-      ],
-      attachments: {
-        establishmentNotice: null,
-        latestChangesNotice: null,
-        statuteFile: null,
-        otherDocs: []
-      }
-    },
-    // بخش دوم: گزارش پیشرفت فنی
-    technicalReport: {
-      content: '',
-      attachments: [],
-      lastAutoSaved: nowStr
-    },
-    // بخش سوم: بوم مدل کسب‌وکار
-    businessModelCanvas: {
-      keyPartners: '',
-      keyActivities: '',
-      keyResources: '',
-      valuePropositions: '',
-      customerRelationships: '',
-      channels: '',
-      customerSegments: company.targetAudience || '',
-      costStructure: '',
-      revenueStreams: company.revenueModel || '',
-      attachments: []
-    },
-    // بخش چهارم: برنامه یک‌ساله تجاری‌سازی
-    commercializationPlan: {
-      generalOverview: '',
-      targetMarket: '',
-      targetCustomers: company.targetAudience || '',
-      goToMarketStrategy: '',
-      marketingAndSalesPlan: '',
-      productDevelopmentPlan: '',
-      financialFundingPlan: '',
-      requiredPartners: '',
-      kpis: '',
-      forecastSalesAmount: '',
-      forecastCustomersCount: '',
-      forecastContractsCount: '',
-      quarters: [
-        { id: 'q1', title: 'سه‌ماهه اول (بهار)', actions: '', expectedOutput: '', metric: '' },
-        { id: 'q2', title: 'سه‌ماهه دوم (تابستان)', actions: '', expectedOutput: '', metric: '' },
-        { id: 'q3', title: 'سه‌ماهه سوم (پاییز)', actions: '', expectedOutput: '', metric: '' },
-        { id: 'q4', title: 'سه‌ماهه چهارم (زمستان)', actions: '', expectedOutput: '', metric: '' }
       ]
     },
-    // بخش پنجم: قراردادهای فروش و سوابق تجاری‌سازی
-    contracts: [],
-    snapshots: [],
-    history: [
-      {
-        id: 'uh-' + Date.now(),
-        date: nowStr,
-        user: company.ceoName || 'نماینده شرکت',
-        action: 'شروع تکمیل فرم درخواست تبدیل وضعیت از پیش‌رشد به رشد',
-        details: ''
-      }
-    ]
-  };
-};
-
-const INITIAL_UPGRADE_STATE = {
-  requests: [
     {
-      id: 'upg-demo-4',
-      companyId: 'comp-4',
-      companyName: 'هسته فناور نانوپوشش آریا',
-      status: 'عودت‌شده برای اصلاح',
-      submittedAt: '1405/01/18 11:30',
-      approvedAt: '',
-      assignedExpert: 'مهندس حسینی (کارشناس مرکز رشد)',
-      internalExpertNotes: 'تست‌های آزمایشگاهی عملکرد قابل قبولی داشته است؛ نیاز به تکمیل گواهی ثبت شرکت و جدول KPI سه‌ماهه چهارم.',
-      generalReturnNote: 'لطفاً مدارک ثبتی شخصیت حقوقی جدید و شاخص‌های کمی فصل چهارم را تکمیل و مجدداً ارسال نمایید.',
-      sectionCorrections: {
-        sec1: { needsFix: true, note: 'شناسه ملی شرکت ثبت‌شده و تصویر آگهی تأسیس بارگذاری شود.' },
-        sec2: { needsFix: false, note: '' },
-        sec3: { needsFix: false, note: '' },
-        sec4: { needsFix: true, note: 'شاخص سنجش سه‌ماهه چهارم (Q4) و پیش‌بینی فروش سال آینده تکمیل گردد.' },
-        sec5: { needsFix: false, note: '' }
+      id: 'ast-2',
+      companyId: 'comp-1',
+      companyName: 'پارس هوش مصنوعی پردیس',
+      itemName: 'صندلی',
+      assetCode: 'PRK-1042',
+      category: 'مبلمان اداری',
+      physicalCondition: 'سالم',
+      notes: 'صندلی چرخ‌دار کارشناسی',
+      deliveryDate: '1400/02/05',
+      deliveredBy: 'کارشناس اموال مرکز رشد',
+      receivedBy: 'دکتر امیرحسین کاظمی',
+      confirmationStatus: 'نهایی‌شده',
+      companyConfirmation: {
+        confirmedBy: 'دکتر امیرحسین کاظمی',
+        date: '1400/02/06 11:30',
+        discrepancyNote: ''
       },
-      registrationInfo: {
-        fullCompanyName: 'شرکت فناوری نانوپوشش آریا (سهامی خاص)',
-        companyType: 'سهامی خاص',
-        nationalId: '14014589632',
-        registrationNumber: '634890',
-        establishedDate: '1403/09/12',
-        headquartersAddress: 'پارک فناوری پردیس، ساختمان نخبگان، فضای کار اشتراکی',
-        ceoName: 'مهندس محمدجواد کریمی',
-        companyPhone: '021-76250112',
-        officialEmail: 'aria.nanocoat@gmail.com',
-        shareholders: [
-          { id: 'sh-101', name: 'مهندس محمدجواد کریمی', nationalCode: '0012345678', sharePercent: 55, role: 'مدیرعامل و عضو هیئت‌مدیره' },
-          { id: 'sh-102', name: 'دکتر سارا امیری', nationalCode: '0087654321', sharePercent: 45, role: 'رئیس هیئت‌مدیره و مدیر تحقیق و توسعه' }
-        ],
-        attachments: {
-          establishmentNotice: null,
-          latestChangesNotice: null,
-          statuteFile: null,
-          otherDocs: []
-        }
-      },
-      technicalReport: {
-        content:
-          '<h3>۱. معرفی ایده محوری و محصول</h3><p>توسعه پوشش‌های نانوپلیمری مقاوم به خوردگی و دمای بالا ویژه مبدل‌های حرارتی صنایع نفت، گاز و پتروشیمی.</p><h3>۲. اقدامات فنی انجام‌شده در دوره پیش‌رشد</h3><ul><li>سنتز فرمولاسیون پایه نانوکامپوزیت سیلیکونی</li><li>انجام آزمون مقاومت حرارتی تا دمای ۳۵۰ درجه سانتی‌گراد در آزمایشگاه مرجع</li><li>تولید نمونه نیمه‌صنعتی به حجم ۲۰ لیتر</li></ul><h3>۳. برنامه توسعه فنی در مرحله رشد</h3><p>راه‌اندازی خط تولید نیمه‌صنعتی ۵۰۰ لیتری و اخذ گواهینامه استاندارد از پژوهشگاه صنعت نفت.</p>',
-        attachments: [],
-        lastAutoSaved: '1405/01/18 11:25'
-      },
-      businessModelCanvas: {
-        keyPartners: 'پژوهشگاه صنعت نفت، تأمین‌کنندگان مواد اولیه پلیمری، پیمانکاران تعمیرات اساسی پالایشگاه‌ها',
-        keyActivities: 'فرمولاسیون و تولید پوشش نانویی، تست‌های کنترل کیفیت، مشاوره اجرای پوشش در محل',
-        keyResources: 'دانش فنی ثبت‌شده، تیم متخصص مهندسی مواد، تجهیزات آزمایشگاهی سنتز و تست خوردگی',
-        valuePropositions: 'افزایش ۳ برابری عمر مبدل‌های حرارتی و کاهش ۴۰ درصدی هزینه توقف خطوط پالایشگاهی',
-        customerRelationships: 'قراردادهای پایش دوره‌ای عملکرد پوشش و پشتیبانی فنی اختصاصی',
-        channels: 'فروش مستقیم سازمانی B2B و حضور در نمایشگاه‌های تخصصی نفت و پتروشیمی',
-        customerSegments: 'پالایشگاه‌های نفت و گاز، مجتمع‌های پتروشیمی و نیروگاه‌های حرارتی',
-        costStructure: 'مواد اولیه تخصصی، حقوق نیروی انسانی تحقیق و توسعه، آزمون‌های استاندارد',
-        revenueStreams: 'فروش مستقیم محلول پوشش‌دهی (بر حسب کیلوگرم) + اجرای پروژه پوشش‌دهی',
-        attachments: []
-      },
-      commercializationPlan: {
-        generalOverview: 'ورود به زنجیره تأمین دو مجتمع پتروشیمی بزرگ در نیمه اول سال و گسترش سبد محصولات به پوشش‌های ضد رسوب.',
-        targetMarket: 'صنایع نفت، گاز، پتروشیمی و نیروگاهی کشور',
-        targetCustomers: 'شرکت‌های پالایش نفت، پتروشیمی بندر امام و نیروگاه‌های سیکل ترکیبی',
-        goToMarketStrategy: 'اجرای پایلوت رایگان روی یک مبدل حرارتی و انعقاد قرارداد تأمین سالانه پس از تأیید عملکرد',
-        marketingAndSalesPlan: 'مذاکره مستقیم با واحدهای بازرسی فنی و خوردگی مجتمع‌های صنعتی',
-        productDevelopmentPlan: 'افزایش مقیاس تولید از ۲۰ لیتر به ۵۰۰ لیتر در ماه',
-        financialFundingPlan: 'استفاده از تسهیلات نمونه صنعتی صندوق پژوهش و فناوری پردیس',
-        requiredPartners: 'شرکت‌های پیمانکار تعمیرات اساسی (Overhaul) پالایشگاه‌ها',
-        kpis: 'عقد حداقل ۳ قرارداد تجاری، فروش ۴.۵ میلیارد تومان، افزایش پرسنل به ۸ نفر',
-        forecastSalesAmount: '4500000000',
-        forecastCustomersCount: '6',
-        forecastContractsCount: '4',
-        quarters: [
-          { id: 'q1', title: 'سه‌ماهه اول', actions: 'تکمیل خط تولید نیمه‌صنعتی و اخذ تاییدیه آزمون خوردگی', expectedOutput: 'تولید ۲۰۰ لیتر محصول استاندارد', metric: 'گواهی آزمون معتبر' },
-          { id: 'q2', title: 'سه‌ماهه دوم', actions: 'اجرای پایلوت صنعتی در پتروشیمی و مذاکره فروش', expectedOutput: 'انعقاد ۲ قرارداد اولیه', metric: 'تعداد قرارداد امضاشده' },
-          { id: 'q3', title: 'سه‌ماهه سوم', actions: 'تحویل سفارش‌های اول و توسعه نسخه مقاوم به اسید', expectedOutput: 'تحقق ۲ میلیارد تومان فروش', metric: 'مبلغ فروش محقق‌شده' },
-          { id: 'q4', title: 'سه‌ماهه چهارم', actions: 'توسعه بازار به نیروگاه‌ها و جذب نیروی فروش', expectedOutput: 'تثبیت جریان درآمدی مستمر', metric: 'درصد تحقق برنامه فروش' }
-        ]
-      },
-      contracts: [
+      events: [
         {
-          id: 'cnt-1',
-          productName: 'پوشش نانویی ضدخوردگی مبدل حرارتی (بسته آزمایشی صنعتی)',
-          clientOrg: 'شرکت پالایش نفت تهران',
-          clientType: 'دولتی',
-          subject: 'تأمین و اجرای پوشش نانویی برای ۲ دستگاه مبدل حرارتی واحد تقطیر',
-          contractAmount: 650000000,
-          contractDate: '1404/11/20',
-          duration: '۴ ماه',
-          status: 'در حال اجرا',
-          realizedSalesAmount: 325000000,
-          notes: 'پیش‌پرداخت ۵۰ درصد دریافت و مرحله اول اجرا با موفقیت انجام شده است.',
-          attachments: { contractFile: null, invoiceFile: null, deliveryFile: null, otherFile: null }
-        }
-      ],
-      snapshots: [
-        {
-          version: 1,
-          date: '1405/01/18 11:30',
-          note: 'ارسال اولیه درخواست توسط شرکت به مرکز رشد'
-        }
-      ],
-      history: [
-        {
-          id: 'uh-1',
-          date: '1405/01/15 10:00',
-          user: 'مهندس محمدجواد کریمی',
-          action: 'شروع تکمیل فرم درخواست تبدیل وضعیت از پیش‌رشد به رشد',
-          details: ''
+          id: 'ev-3',
+          type: 'تحویل اولیه',
+          quantityDelta: 6,
+          date: '1400/02/05',
+          user: 'کارشناس اموال',
+          reason: 'تحویل اولیه'
         },
         {
-          id: 'uh-2',
-          date: '1405/01/18 11:30',
-          user: 'مهندس محمدجواد کریمی',
-          action: 'تأیید نهایی و ارسال درخواست به مرکز رشد',
-          details: 'نسخه ۱ ارسال شد'
-        },
+          id: 'ev-4',
+          type: 'استرداد به مرکز رشد',
+          quantityDelta: -1,
+          date: '1403/03/12',
+          user: 'کارشناس اموال',
+          reason: 'استهلاک جک صندلی و عودت به انبار'
+        }
+      ]
+    },
+    {
+      id: 'ast-3',
+      companyId: 'comp-2',
+      companyName: 'زیست‌فناوران نوین ژنوم',
+      itemName: 'تخته وایت‌برد',
+      assetCode: 'PRK-2015',
+      category: 'تجهیزات آموزشی و جلسات',
+      physicalCondition: 'سالم',
+      notes: 'وایت‌برد مغناطیسی ۱۰۰ در ۱۵۰',
+      deliveryDate: '1405/01/14',
+      deliveredBy: 'کارشناس اموال مرکز رشد',
+      receivedBy: 'دکتر مریم احمدی',
+      confirmationStatus: 'ارسال‌شده برای تأیید شرکت',
+      companyConfirmation: null,
+      events: [
         {
-          id: 'uh-3',
-          date: '1405/01/20 14:15',
-          user: 'مهندس حسینی (کارشناس مرکز رشد)',
-          action: 'عودت درخواست برای اصلاح و تکمیل مدارک',
-          details: 'لطفاً مدارک ثبتی شخصیت حقوقی جدید و شاخص‌های کمی فصل چهارم را تکمیل و مجدداً ارسال نمایید.'
+          id: 'ev-5',
+          type: 'تحویل اولیه',
+          quantityDelta: 1,
+          date: '1405/01/14',
+          user: 'کارشناس اموال',
+          reason: 'تجهیز اتاق جلسات واحد ۱۰۸'
         }
       ]
     }
   ]
 };
 
-// محاسبه درصد تکمیل ۵ بخش فرم تبدیل وضعیت
-const computeUpgradeCompletion = (req) => {
-  if (!req) return { totalPercent: 0, sections: { sec1: 0, sec2: 0, sec3: 0, sec4: 0, sec5: 0 } };
-  const r = req.registrationInfo || {};
-  const sec1Fields = [r.fullCompanyName, r.companyType, r.nationalId, r.registrationNumber, r.establishedDate, r.headquartersAddress, r.ceoName, r.companyPhone];
-  const sec1Filled = sec1Fields.filter((v) => String(v || '').trim().length > 0).length + ((r.shareholders?.length || 0) > 0 ? 1 : 0);
-  const sec1 = Math.round((sec1Filled / 9) * 100);
+// ثابت‌های ماژول تبدیل وضعیت شرکت
+const INITIAL_UPGRADE_STATE = {
+  requests: [
+    {
+      id: 'upg-1',
+      companyId: 'comp-4',
+      companyName: 'هسته فناور نانوپوشش آریا',
+      status: 'در حال تکمیل',
+      startedAt: '1405/01/10 09:00',
+      submittedAt: '',
+      assignedExpert: 'مهندس حسینی',
+      internalNote: '',
+      sectionRemarks: {
+        section1: '',
+        section2: '',
+        section3: '',
+        section4: '',
+        section5: ''
+      },
+      section1: {
+        fullCompanyName: 'فناوران نانوپوشش آریا (سهامی خاص)',
+        legalType: 'سهامی خاص',
+        nationalId: '14011998877',
+        registrationNumber: '615420',
+        registrationDate: '1403/01/20',
+        headquartersAddress: 'پارک فناوری پردیس، ساختمان نخبگان، واحد اشتراکی ۱۲',
+        ceoName: 'مهندس محمدجواد کریمی',
+        phone: '09351234567',
+        email: 'aria.nanocoat@gmail.com',
+        shareholders: [
+          { name: 'محمدجواد کریمی', sharePercent: 55, role: 'مدیرعامل و عضو هیئت‌مدیره' },
+          { name: 'سارا محمدی', sharePercent: 45, role: 'رئیس هیئت‌مدیره' }
+        ],
+        attachments: {
+          establishmentAd: null,
+          latestChanges: null,
+          statute: null,
+          otherDocs: null
+        }
+      },
+      section2: {
+        reportText:
+          'ایده محوری شرکت تولید پوشش‌های نانوپلیمری مقاوم در برابر خوردگی اسیدی و حرارت بالا برای مبدل‌های حرارتی صنایع نفت و گاز است.\nدر طول دوره پیش‌رشد، فرمولاسیون آزمایشگاهی بهینه شد و تست‌های خوردگی ASTM B117 با موفقیت در آزمایشگاه مرجع انجام گردید.',
+        attachments: []
+      },
+      section3: {
+        customerSegments: 'پالایشگاه‌ها، مجتمع‌های پتروشیمی و نیروگاه‌های حرارتی',
+        valuePropositions: 'افزایش ۳ برابری عمر مبدل‌های حرارتی و کاهش هزینه‌های تعمیرات اساسی',
+        channels: 'فروش مستقیم سازمانی (B2B) و پیمانکاران تعمیرات و نگهداری صنایع',
+        customerRelationships: 'مشاوره فنی اختصاصی، اجرای پایلوت و پشتیبانی پس از اجرا',
+        revenueStreams: 'فروش پوشش نانوپلیمری و اجرای قراردادهای پوشش‌دهی صنعتی',
+        keyResources: 'دانش فنی فرمولاسیون، تیم متخصص مهندسی مواد، آزمایشگاه تست خوردگی',
+        keyActivities: 'تولید نیمه‌صنعتی، کنترل کیفیت، بازاریابی فنی و اجرای پایلوت',
+        keyPartners: 'پارک فناوری پردیس، آزمایشگاه‌های مرجع نانو، پیمانکاران نفت و گاز',
+        costStructure: 'مواد اولیه پلیمری و نانوذرات، حقوق نیروی متخصص، هزینه‌های آزمون و استاندارد',
+        attachments: []
+      },
+      section4: {
+        overview: 'ورود به بازار صنایع پتروشیمی کشور و انعقاد ۳ قرارداد پایلوت صنعتی در سال اول دوره رشد.',
+        targetMarket: 'صنایع نفت، گاز، پتروشیمی و نیروگاهی کشور',
+        targetCustomers: 'واحدهای مهندسی خوردگی و تعمیرات پالایشگاه‌ها',
+        goToMarketStrategy: 'اجرای پایلوت رایگان روی یک مبدل نمونه و اخذ تاییدیه فنی بهره‌بردار',
+        marketingPlan: 'حضور در نمایشگاه بین‌المللی نفت و گاز و برگزاری جلسات فنی B2B',
+        productDevPlan: 'اخذ تاییدیه نانومقیاس و ارتقاء ظرفیت تولید به ۵ تن در ماه',
+        financialPlan: 'تأمین مالی از محل پیش‌دریافت قراردادها و تسهیلات صندوق پژوهش و فناوری',
+        industrialPartners: 'شرکت ملی پالایش و پخش فرآورده‌های نفتی',
+        kpis: 'انعقاد حداقل ۳ قرارداد تجاری، اخذ گواهی نانومقیاس، فروش ۵ میلیارد تومان',
+        forecastSales: '۵,۰۰۰,۰۰۰,۰۰۰',
+        forecastCustomers: '۶',
+        forecastContracts: '۴',
+        quarters: {
+          q1: { actions: 'اخذ تاییدیه نانومقیاس و تکمیل خط تولید نیمه‌صنعتی', output: 'گواهی نانومقیاس', kpi: 'تولید ۵۰۰ کیلوگرم محصول' },
+          q2: { actions: 'اجرای ۲ پایلوت صنعتی در پالایشگاه', output: 'گزارش عملکرد پایلوت', kpi: 'تایید فنی کارفرما' },
+          q3: { actions: 'انعقاد قراردادهای فروش تجاری اول و دوم', output: 'قرارداد رسمی فروش', kpi: 'فروش ۲ میلیارد تومان' },
+          q4: { actions: 'توسعه تیم فروش و عقد قرارداد سوم', output: 'گزارش عملکرد سالانه', kpi: 'فروش تجمعی ۵ میلیارد تومان' }
+        }
+      },
+      section5: {
+        contracts: [
+          {
+            id: 'cnt-1',
+            productName: 'پوشش نانوپلیمری AriaShield-200',
+            clientOrg: 'پتروشیمی پردیس',
+            clientType: 'صنعتی / خصوصی',
+            subject: 'اجرای پایلوت پوشش ضدخوردگی مبدل حرارتی واحد آمونیاک',
+            contractAmount: 850000000,
+            contractDate: '1404/11/15',
+            duration: '۴ ماه',
+            status: 'در حال اجرا',
+            realizedSales: 425000000,
+            notes: 'قسط اول پیش‌پرداخت دریافت شده است.',
+            contractFile: null,
+            invoiceFile: null
+          }
+        ]
+      },
+      history: [
+        {
+          id: 'uh-1',
+          date: '1405/01/10 09:00',
+          user: 'مهندس محمدجواد کریمی',
+          action: 'ایجاد و شروع تکمیل پرونده درخواست تبدیل وضعیت از پیش‌رشد به رشد'
+        }
+      ]
+    }
+  ]
+};
 
-  const plainTech = String(req.technicalReport?.content || '').replace(/<[^>]*>/g, '').trim();
-  const sec2 = plainTech.length >= 150 ? 100 : plainTech.length >= 40 ? 60 : plainTech.length > 0 ? 25 : 0;
+// ============================================================================
+// ۲-د. داده‌ها و ثابت‌های ماژول «مدیریت نیروی انسانی شرکت‌ها»
+// ============================================================================
+const HR_ORG_UNITS = ['مدیریت', 'فنی و مهندسی', 'تحقیق و توسعه (R&D)', 'فروش و توسعه بازار', 'بازاریابی و محتوا', 'مالی و حسابداری', 'اداری و پشتیبانی'];
+const HR_COOPERATION_TYPES = ['تمام‌وقت', 'پاره‌وقت', 'پروژه‌ای', 'مشاور', 'کارآموز', 'پیمانکاری', 'سایر'];
+const HR_CONTRACT_TYPES = ['قرارداد استخدامی', 'قرارداد کار معین', 'قرارداد پروژه‌ای', 'قرارداد مشاوره', 'قرارداد پیمانکاری', 'بدون قرارداد رسمی', 'سایر'];
+const HR_COOPERATION_STATUSES = ['فعال', 'غیرفعال', 'تعلیق همکاری', 'خاتمه همکاری'];
+const HR_ATTENDANCE_MODES = ['حضوری در محل شرکت', 'دورکار / مجازی', 'ترکیبی (حضوری و مجازی)', 'فعالیت خارج از مرکز رشد'];
+const HR_WORK_LOCATIONS = ['واحد اختصاصی شرکت در مرکز رشد', 'فضای کار اشتراکی', 'خارج از مرکز رشد', 'سایر'];
 
-  const bmc = req.businessModelCanvas || {};
-  const bmcKeys = BMC_BLOCKS_CONFIG.map((b) => b.id);
-  const bmcFilled = bmcKeys.filter((k) => String(bmc[k] || '').trim().length > 0).length;
-  const sec3 = Math.round((bmcFilled / bmcKeys.length) * 100);
+const INITIAL_HR_STATE = {
+  companyVehicles: [
+    {
+      id: 'cveh-1',
+      companyId: 'comp-1',
+      companyName: 'پارس هوش مصنوعی پردیس',
+      vehicleType: 'سواری',
+      brandModel: 'پژو ۲۰۷ اتوماتیک سفید',
+      color: 'سفید',
+      plateNumber: '۴۴ ب ۳۲۸ ایران ۱۱',
+      ownerType: 'متعلق به شرکت',
+      notes: 'خودرو سازمانی جهت تردد تیم فنی و جلسات بیرون از پارک'
+    }
+  ],
+  personnel: [
+    {
+      id: 'hr-101',
+      companyId: 'comp-1',
+      companyName: 'پارس هوش مصنوعی پردیس',
+      reviewStatus: 'تأییدشده',
+      returnNote: '',
+      firstName: 'سارا',
+      lastName: 'رضایی',
+      fatherName: 'محمد',
+      nationalId: '0074561239',
+      birthDate: '1369/04/18',
+      mobile: '09123451122',
+      email: 's.rezaei@pars-ai.ir',
+      gender: 'زن',
+      avatarUrl: '',
+      jobTitle: 'مدیر فنی و هوش مصنوعی',
+      orgUnit: 'فنی و مهندسی',
+      specialty: 'پردازش زبان طبیعی و یادگیری عمیق',
+      degree: 'دکتری تخصصی',
+      major: 'مهندسی کامپیوتر - هوش مصنوعی',
+      experienceYears: 7,
+      startDate: '1400/03/01',
+      cooperationType: 'تمام‌وقت',
+      contractType: 'قرارداد استخدامی',
+      contractDuration: 'یک‌ساله',
+      contractStartDate: '1405/01/01',
+      contractEndDate: '1405/12/29',
+      cooperationStatus: 'فعال',
+      exitDate: '',
+      exitReason: '',
+      attendanceMode: 'حضوری در محل شرکت',
+      weeklyPresenceDays: 5,
+      workingHours: '۰۸:۳۰ الی ۱۷:۰۰',
+      presenceDaysOfWeek: 'شنبه تا چهارشنبه',
+      activityNotes: 'حضور کامل در واحد ۳۰۴ ساختمان نخبگان',
+      workLocation: 'واحد اختصاصی شرکت در مرکز رشد',
+      hasVehicle: true,
+      vehicles: [
+        {
+          id: 'veh-1',
+          vehicleType: 'سواری',
+          brandModel: 'مزدا ۳ نیو',
+          color: 'خاکستری',
+          plateNumber: '۲۲ ج ۵۱۲ ایران ۴۴',
+          ownerType: 'شخصی',
+          notes: ''
+        }
+      ],
+      sharedCompanyVehicleIds: ['cveh-1'],
+      documents: {
+        contractFile: null,
+        resumeFile: null,
+        educationFile: null,
+        nationalCardFile: null,
+        otherFile: null
+      },
+      history: [
+        { id: 'hrh-1', date: '1405/01/10 09:30', user: 'دکتر امیرحسین کاظمی', action: 'ثبت پرونده پرسنلی و ارسال به مرکز رشد' },
+        { id: 'hrh-2', date: '1405/01/12 14:00', user: 'مهندس حسینی (کارشناس مرکز رشد)', action: 'بررسی و تأیید نهایی اطلاعات پرسنل' }
+      ]
+    },
+    {
+      id: 'hr-102',
+      companyId: 'comp-1',
+      companyName: 'پارس هوش مصنوعی پردیس',
+      reviewStatus: 'ارسال‌شده',
+      returnNote: '',
+      firstName: 'امیررضا',
+      lastName: 'نیک‌بخت',
+      fatherName: 'حسین',
+      nationalId: '0018923456',
+      birthDate: '1374/09/12',
+      mobile: '09358899001',
+      email: 'a.nikbakht@pars-ai.ir',
+      gender: 'مرد',
+      avatarUrl: '',
+      jobTitle: 'توسعه‌دهنده ارشد نرم‌افزار',
+      orgUnit: 'تحقیق و توسعه (R&D)',
+      specialty: 'معماری میکروسرویس و پایتون',
+      degree: 'کارشناسی ارشد',
+      major: 'مهندسی نرم‌افزار',
+      experienceYears: 4,
+      startDate: '1402/06/15',
+      cooperationType: 'تمام‌وقت',
+      contractType: 'قرارداد کار معین',
+      contractDuration: '۶ ماهه',
+      contractStartDate: '1404/11/01',
+      contractEndDate: '1405/04/31',
+      cooperationStatus: 'فعال',
+      exitDate: '',
+      exitReason: '',
+      attendanceMode: 'ترکیبی (حضوری و مجازی)',
+      weeklyPresenceDays: 3,
+      workingHours: '۰۹:۰۰ الی ۱۷:۳۰',
+      presenceDaysOfWeek: 'شنبه، دوشنبه، چهارشنبه',
+      activityNotes: 'سایر روزها به‌صورت دورکار فعالیت دارد.',
+      workLocation: 'واحد اختصاصی شرکت در مرکز رشد',
+      hasVehicle: false,
+      vehicles: [],
+      sharedCompanyVehicleIds: ['cveh-1'],
+      documents: {
+        contractFile: null,
+        resumeFile: null,
+        educationFile: null,
+        nationalCardFile: null,
+        otherFile: null
+      },
+      history: [
+        { id: 'hrh-3', date: '1405/01/16 11:20', user: 'دکتر امیرحسین کاظمی', action: 'ثبت اطلاعات پرسنل جدید و ارسال برای تأیید مرکز رشد' }
+      ]
+    },
+    {
+      id: 'hr-103',
+      companyId: 'comp-2',
+      companyName: 'زیست‌فناوران نوین ژنوم',
+      reviewStatus: 'تأییدشده',
+      returnNote: '',
+      firstName: 'نیلوفر',
+      lastName: 'فرهادی',
+      fatherName: 'علی',
+      nationalId: '0081239876',
+      birthDate: '1371/02/25',
+      mobile: '09126543210',
+      email: 'n.farhadi@genome-bio.ir',
+      gender: 'زن',
+      avatarUrl: '',
+      jobTitle: 'مسئول فنی آزمایشگاه مولکولی',
+      orgUnit: 'تحقیق و توسعه (R&D)',
+      specialty: 'ژنتیک مولکولی و PCR',
+      degree: 'کارشناسی ارشد',
+      major: 'زیست‌فناوری پزشکی',
+      experienceYears: 5,
+      startDate: '1401/07/01',
+      cooperationType: 'تمام‌وقت',
+      contractType: 'قرارداد استخدامی',
+      contractDuration: 'یک‌ساله',
+      contractStartDate: '1405/01/01',
+      contractEndDate: '1405/12/29',
+      cooperationStatus: 'فعال',
+      exitDate: '',
+      exitReason: '',
+      attendanceMode: 'حضوری در محل شرکت',
+      weeklyPresenceDays: 5,
+      workingHours: '۰۸:۰۰ الی ۱۶:۳۰',
+      presenceDaysOfWeek: 'شنبه تا چهارشنبه',
+      activityNotes: 'استقرار ثابت در آزمایشگاه زیست واحد ۱۰۸',
+      workLocation: 'واحد اختصاصی شرکت در مرکز رشد',
+      hasVehicle: true,
+      vehicles: [
+        {
+          id: 'veh-2',
+          vehicleType: 'سواری',
+          brandModel: 'تیبا ۲ هاچ‌بک',
+          color: 'سفید',
+          plateNumber: '۷۷ د ۸۱۴ ایران ۶۶',
+          ownerType: 'شخصی',
+          notes: ''
+        }
+      ],
+      sharedCompanyVehicleIds: [],
+      documents: {
+        contractFile: null,
+        resumeFile: null,
+        educationFile: null,
+        nationalCardFile: null,
+        otherFile: null
+      },
+      history: [
+        { id: 'hrh-4', date: '1405/01/14 10:00', user: 'دکتر مریم احمدی', action: 'ثبت پرونده پرسنلی' }
+      ]
+    }
+  ]
+};
 
-  const cp = req.commercializationPlan || {};
-  const cpFields = [cp.generalOverview, cp.targetMarket, cp.goToMarketStrategy, cp.marketingAndSalesPlan, cp.kpis, cp.forecastSalesAmount];
-  const cpFilled = cpFields.filter((v) => String(v || '').trim().length > 0).length;
-  const sec4 = Math.round((cpFilled / cpFields.length) * 100);
+// ============================================================================
+// ۳. کامپوننت آواتار شرکت
+// ============================================================================
+const CompanyAvatar = ({ company, size = 'md' }) => {
+  const sizeClasses = {
+    sm: 'w-10 h-10 text-sm',
+    md: 'w-14 h-14 text-lg',
+    lg: 'w-20 h-20 text-2xl'
+  };
 
-  const sec5 = (req.contracts?.length || 0) > 0 ? 100 : 0;
+  if (company?.logoUrl) {
+    return (
+      <img
+        src={company.logoUrl}
+        alt={company.name}
+        className={`${sizeClasses[size]} rounded-xl object-contain bg-white border border-slate-200 p-1.5 shadow-sm shrink-0`}
+      />
+    );
+  }
 
-  const totalPercent = Math.round((sec1 + sec2 + sec3 + sec4 + sec5) / 5);
-  return { totalPercent, sections: { sec1, sec2, sec3, sec4, sec5 } };
+  const initials =
+    (company?.name || 'ش')
+      .replace(/شرکت|هسته فناور|مهندسی|دانش‌بنیان/g, '')
+      .trim()
+      .slice(0, 2) || 'نخ';
+
+  return (
+    <div
+      className={`${sizeClasses[size]} rounded-xl bg-gradient-to-br from-[#0f294a] to-[#1d4ed8] text-white font-bold flex items-center justify-center shadow-sm shrink-0 border border-blue-900/20`}
+    >
+      {initials}
+    </div>
+  );
 };
 
 // ============================================================================
 // ۴. کامپوننت اصلی اپلیکیشن با منوی عمودی سمت راست (Right Sidebar Navigation)
 // ============================================================================
 export default function App() {
-  useEffect(() => {
-    if (!window.XLSX && !document.getElementById('sheetjs-cdn-script')) {
-      const script = document.createElement('script');
-      script.id = 'sheetjs-cdn-script';
-      script.src = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
-      script.async = true;
-      document.body.appendChild(script);
-    }
-  }, []);
-
   const [companies, setCompanies] = useState(() => {
     try {
       const saved = localStorage.getItem('nokhbegan_companies_v1');
@@ -1562,6 +1223,31 @@ export default function App() {
     }
   });
 
+  const [hrState, setHrState] = useState(() => {
+    try {
+      const saved = localStorage.getItem('nokhbegan_hr_v1');
+      return saved ? JSON.parse(saved) : INITIAL_HR_STATE;
+    } catch {
+      return INITIAL_HR_STATE;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nokhbegan_companies_v1', JSON.stringify(companies));
+    } catch (e) {
+      console.error('Companies storage error', e);
+    }
+  }, [companies]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nokhbegan_access_policies_v1', JSON.stringify(accessPolicies));
+    } catch (e) {
+      console.error('Policies storage error', e);
+    }
+  }, [accessPolicies]);
+
   useEffect(() => {
     try {
       localStorage.setItem('nokhbegan_secretariat_v1', JSON.stringify(secretariat));
@@ -1582,39 +1268,70 @@ export default function App() {
     try {
       localStorage.setItem('nokhbegan_upgrade_requests_v1', JSON.stringify(upgradeState));
     } catch (e) {
-      console.error('Upgrade requests storage error', e);
+      console.error('Upgrade storage error', e);
     }
   }, [upgradeState]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('nokhbegan_hr_v1', JSON.stringify(hrState));
+    } catch (e) {
+      console.error('HR storage error', e);
+    }
+  }, [hrState]);
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [openMenus, setOpenMenus] = useState({ portal: true, upgrade: true, secretariat: true, assets: true });
+  const [openMenus, setOpenMenus] = useState({
+    portal: true,
+    hr: true,
+    upgrade: true,
+    secretariat: true,
+    assets: true
+  });
 
   const [activeSection, setActiveSection] = useState('public_home');
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [editingCompany, setEditingCompany] = useState(null);
+  const [globalQuickSearch, setGlobalQuickSearch] = useState('');
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const [toast, setToast] = useState(null);
 
+  // نقش کاربری فعال در سامانه (قابل تعویض سریع در پایین سایدبار برای تست دسترسی‌ها)
   const [adminUser, setAdminUser] = useState({
     username: 'admin',
     role: 'admin',
     secretariatRole: 'system_admin',
-    name: 'مهندس محمدی (مدیر سیستم)'
+    name: 'مدیر سیستم مرکز رشد',
+    companyId: 'comp-1'
   });
 
-  const [selectedLetterId, setSelectedLetterId] = useState(null);
-  const [editingDraftLetter, setEditingDraftLetter] = useState(null);
-
-  const [globalSearch, setGlobalSearch] = useState('');
-  const [showGlobalSearchResults, setShowGlobalSearchResults] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [toast, setToast] = useState(null);
+  useEffect(() => {
+    if (!window.XLSX && !document.getElementById('sheetjs-cdn-script')) {
+      const script = document.createElement('script');
+      script.id = 'sheetjs-cdn-script';
+      script.src = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
 
-  const companyStats = useMemo(() => {
+  const handleNavigate = (sectionId) => {
+    if (sectionId === 'comp_form') {
+      setEditingCompany(null);
+    }
+    setActiveSection(sectionId);
+    setMobileDrawerOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // آمارهای تجمیعی شرکت‌ها
+  const stats = useMemo(() => {
     const publicList = companies.filter((c) => c.isPublic);
     const activeCount = companies.filter((c) => c.status && c.status.includes('فعال')).length;
     const exitedCount = companies.filter((c) => c.status && c.status.includes('خارج')).length;
@@ -1627,20 +1344,16 @@ export default function App() {
     );
     const totalStaff = companies.reduce((sum, c) => sum + (Number(c.totalStaff) || 0), 0);
     const fieldsSet = new Set(companies.map((c) => c.field).filter(Boolean));
-
     const byField = {};
     companies.forEach((c) => {
       const f = c.field || 'سایر حوزه‌ها';
       byField[f] = (byField[f] || 0) + 1;
     });
-
     const expiringCompanies = companies.filter(
       (c) =>
-        (c.membershipStatus &&
-          (c.membershipStatus.includes('آماده خروج') || c.membershipStatus.includes('رو به اتمام'))) ||
+        (c.membershipStatus && (c.membershipStatus.includes('آماده خروج') || c.membershipStatus.includes('رو به اتمام'))) ||
         (c.threeYearEndDate && c.threeYearEndDate.startsWith('1403'))
     );
-
     return {
       total: companies.length,
       publicTotal: publicList.length,
@@ -1655,497 +1368,53 @@ export default function App() {
     };
   }, [companies]);
 
-  const visibleLetters = useMemo(() => {
-    const roleObj = SECRETARIAT_ROLES.find((r) => r.id === adminUser?.secretariatRole) || SECRETARIAT_ROLES[4];
-    return secretariat.letters.filter((l) => {
-      if (l.confidentiality === 'خیلی محرمانه' && roleObj.level < 4) return false;
-      if (l.confidentiality === 'محرمانه' && roleObj.level < 2) return false;
-      if (roleObj.id === 'expert') {
-        const isAssigned =
-          l.assignedToRole === 'expert' ||
-          (l.referrals || []).some((r) => r.toRole === 'expert');
-        return isAssigned || l.confidentiality === 'عادی';
-      }
-      return true;
-    });
-  }, [secretariat.letters, adminUser]);
+  // آمار دبیرخانه
+  const secStats = useMemo(() => {
+    const activeLetters = secretariat.letters.filter((l) => !l.isDeleted && !l.isDraft);
+    const incoming = activeLetters.filter((l) => l.direction === 'incoming').length;
+    const outgoing = activeLetters.filter((l) => l.direction === 'outgoing').length;
+    const pending = activeLetters.filter((l) => ['ثبت اولیه', 'در انتظار ارجاع', 'در انتظار پاسخ'].includes(l.status)).length;
+    const referred = activeLetters.filter((l) => l.status === 'ارجاع‌شده').length;
+    const withDeadline = activeLetters.filter((l) => l.deadline && l.status !== 'مختومه' && l.status !== 'بایگانی‌شده').length;
+    const archived = activeLetters.filter((l) => l.status === 'بایگانی‌شده' || l.status === 'مختومه').length;
+    const drafts = secretariat.letters.filter((l) => !l.isDeleted && l.isDraft).length;
+    const myTasks = activeLetters.filter((l) =>
+      (l.referrals || []).some((r) => r.toUsers?.includes(adminUser.name) && !r.response)
+    ).length;
+    return { incoming, outgoing, pending, referred, withDeadline, archived, drafts, myTasks };
+  }, [secretariat.letters, adminUser.name]);
 
-  const secretariatStats = useMemo(() => {
-    const activeLetters = visibleLetters.filter((l) => !l.isDeleted);
-    const incoming = activeLetters.filter((l) => l.type === 'incoming' && !l.isDraft);
-    const outgoing = activeLetters.filter((l) => l.type === 'outgoing' && !l.isDraft);
-    const pendingAction = activeLetters.filter(
-      (l) => !l.isDraft && ['ثبت اولیه', 'در انتظار ارجاع', 'ارجاع‌شده', 'در حال بررسی', 'در انتظار پاسخ'].includes(l.status)
-    );
-    const referred = activeLetters.filter((l) => !l.isDraft && (l.referrals?.length || 0) > 0);
-    const withDeadline = activeLetters.filter((l) => !l.isDraft && l.deadline && l.status !== 'مختومه' && l.status !== 'بایگانی‌شده');
-    const archived = activeLetters.filter((l) => l.status === 'مختومه' || l.status === 'بایگانی‌شده');
-    const drafts = activeLetters.filter((l) => l.isDraft);
-    const myTasks = activeLetters.filter(
-      (l) =>
-        !l.isDraft &&
-        l.status !== 'مختومه' &&
-        l.status !== 'بایگانی‌شده' &&
-        (l.assignedToRole === adminUser?.secretariatRole ||
-          (l.referrals || []).some((r) => r.toRole === adminUser?.secretariatRole && !r.completed))
-    );
-
-    return {
-      incomingCount: incoming.length,
-      outgoingCount: outgoing.length,
-      pendingCount: pendingAction.length,
-      referredCount: referred.length,
-      deadlineCount: withDeadline.length,
-      archivedCount: archived.length,
-      draftsCount: drafts.length,
-      myTasksCount: myTasks.length,
-      myTasksList: myTasks,
-      deadlineList: withDeadline
-    };
-  }, [visibleLetters, adminUser]);
-
-  const globalSearchResults = useMemo(() => {
-    const q = globalSearch.trim().toLowerCase();
-    if (!q) return { companies: [], letters: [] };
-    const matchedCompanies = companies
-      .filter(
-        (c) =>
-          (c.name && c.name.toLowerCase().includes(q)) ||
-          (c.field && c.field.toLowerCase().includes(q)) ||
-          (c.nationalId && c.nationalId.includes(q))
-      )
-      .slice(0, 5);
-    const matchedLetters = visibleLetters
-      .filter(
-        (l) =>
-          !l.isDeleted &&
-          ((l.subject && l.subject.toLowerCase().includes(q)) ||
-            (l.indicatorNumber && l.indicatorNumber.toLowerCase().includes(q)) ||
-            (l.senderOrg && l.senderOrg.toLowerCase().includes(q)) ||
-            (l.recipientOrg && l.recipientOrg.toLowerCase().includes(q)))
-      )
-      .slice(0, 5);
-    return { companies: matchedCompanies, letters: matchedLetters };
-  }, [globalSearch, companies, visibleLetters]);
-
-  const allocateIndicatorNumber = (type, currentSettings) => {
-    const year = currentSettings.currentYear || '1405';
-    if (type === 'incoming') {
-      const seq = currentSettings.nextIncomingSeq;
-      const num = (currentSettings.incomingPattern || '{YEAR}/و/{SEQ}')
-        .replace('{YEAR}', year)
-        .replace('{SEQ}', String(seq));
-      return { indicatorNumber: num, seq, nextIncomingSeq: seq + 1 };
-    }
-    if (type === 'outgoing') {
-      const seq = currentSettings.nextOutgoingSeq;
-      const num = (currentSettings.outgoingPattern || '{YEAR}/ص/{SEQ}')
-        .replace('{YEAR}', year)
-        .replace('{SEQ}', String(seq));
-      return { indicatorNumber: num, seq, nextOutgoingSeq: seq + 1 };
-    }
-    const seq = currentSettings.nextInternalSeq;
-    const num = (currentSettings.internalPattern || '{YEAR}/د/{SEQ}')
-      .replace('{YEAR}', year)
-      .replace('{SEQ}', String(seq));
-    return { indicatorNumber: num, seq, nextInternalSeq: seq + 1 };
-  };
-
-  const handleSaveLetter = (letterPayload, finalize = true) => {
-    setSecretariat((prev) => {
-      let nextSettings = { ...prev.settings };
-      let nextLedger = [...prev.indicatorLedger];
-      let nextLetters = [...prev.letters];
-      const existingIdx = nextLetters.findIndex((l) => l.id === letterPayload.id);
-      const nowStr = getNowJalaliDateTime();
-
-      let finalIndicator = letterPayload.indicatorNumber || '';
-      let seqNum = letterPayload.seqNumber || null;
-
-      const needsIndicator =
-        !finalIndicator && (letterPayload.type === 'incoming' || finalize);
-
-      if (needsIndicator) {
-        const alloc = allocateIndicatorNumber(letterPayload.type, nextSettings);
-        finalIndicator = alloc.indicatorNumber;
-        seqNum = alloc.seq;
-        if (letterPayload.type === 'incoming') nextSettings.nextIncomingSeq = alloc.nextIncomingSeq;
-        else if (letterPayload.type === 'outgoing') nextSettings.nextOutgoingSeq = alloc.nextOutgoingSeq;
-        else nextSettings.nextInternalSeq = alloc.nextInternalSeq;
-      }
-
-      const savedLetter = {
-        ...letterPayload,
-        id: letterPayload.id || 'let-' + Date.now(),
-        indicatorNumber: finalIndicator,
-        year: nextSettings.currentYear,
-        seqNumber: seqNum,
-        isDraft: !finalize,
-        status: !finalize
-          ? 'پیش‌نویس'
-          : letterPayload.type === 'incoming'
-          ? letterPayload.status || 'ثبت اولیه'
-          : 'ارسال‌شده',
-        versions: [
-          {
-            version: (letterPayload.versions?.length || 0) + 1,
-            date: nowStr,
-            user: adminUser?.name || 'کاربر',
-            note: !finalize
-              ? 'ذخیره در پیش‌نویس‌ها'
-              : `ثبت نهایی با شماره اندیکاتور ${finalIndicator}`
-          },
-          ...(letterPayload.versions || [])
-        ]
-      };
-
-      if (existingIdx !== -1) {
-        nextLetters[existingIdx] = savedLetter;
-      } else {
-        nextLetters.unshift(savedLetter);
-      }
-
-      if (finalIndicator && !nextLedger.some((item) => item.indicatorNumber === finalIndicator)) {
-        nextLedger.unshift({
-          id: 'ind-' + Date.now(),
-          indicatorNumber: finalIndicator,
-          type:
-            letterPayload.type === 'incoming'
-              ? 'وارده'
-              : letterPayload.type === 'outgoing'
-              ? 'صادره'
-              : 'داخلی',
-          year: nextSettings.currentYear,
-          seq: seqNum,
-          letterId: savedLetter.id,
-          subject: savedLetter.subject,
-          party:
-            letterPayload.type === 'incoming'
-              ? savedLetter.senderOrg || savedLetter.senderName
-              : savedLetter.recipientOrg || savedLetter.recipientName,
-          registeredAt: nowStr,
-          registeredBy: adminUser?.name || 'مسئول دبیرخانه',
-          isLetterDeleted: false
-        });
-      }
-
-      const actionDesc = !finalize
-        ? `ذخیره پیش‌نویس نامه: «${savedLetter.subject}»`
-        : `ثبت قطعی نامه (${finalIndicator}): «${savedLetter.subject}»`;
-
-      return {
-        ...prev,
-        settings: nextSettings,
-        letters: nextLetters,
-        indicatorLedger: nextLedger,
-        auditLogs: [
-          { id: 'log-' + Date.now(), date: nowStr, user: adminUser?.name || 'کاربر', action: actionDesc },
-          ...prev.auditLogs
-        ]
-      };
-    });
-
-    showToast(
-      finalize
-        ? 'نامه با موفقیت ثبت نهایی شد و شماره اندیکاتور اختصاص یافت.'
-        : 'نامه در بخش پیش‌نویس‌ها ذخیره شد.'
-    );
-  };
-
-  const handleReferLetter = (letterId, referralData) => {
-    const nowStr = getNowJalaliDateTime();
-    setSecretariat((prev) => {
-      const nextLetters = prev.letters.map((l) => {
-        if (l.id !== letterId) return l;
-        const newRefs = referralData.targets.map((target, i) => ({
-          id: 'ref-' + Date.now() + '-' + i,
-          fromUser: adminUser?.name || 'مدیر',
-          toRole: target.roleId,
-          toName: target.label,
-          referralType: referralData.referralType,
-          deadline: referralData.deadline,
-          instructions: referralData.instructions,
-          date: nowStr,
-          response: '',
-          completed: false
-        }));
-        const primaryTarget = referralData.targets[0];
-        return {
-          ...l,
-          status: 'ارجاع‌شده',
-          deadline: referralData.deadline || l.deadline,
-          assignedToRole: primaryTarget?.roleId || l.assignedToRole,
-          assignedToName: primaryTarget?.label || l.assignedToName,
-          referrals: [...newRefs, ...(l.referrals || [])]
-        };
-      });
-
-      return {
-        ...prev,
-        letters: nextLetters,
-        auditLogs: [
-          {
-            id: 'log-' + Date.now(),
-            date: nowStr,
-            user: adminUser?.name || 'کاربر',
-            action: `ارجاع نامه به ${referralData.targets.map((t) => t.label).join('، ')}`
-          },
-          ...prev.auditLogs
-        ]
-      };
-    });
-    showToast('ارجاع نامه با موفقیت ثبت و در کارتابل گیرندگان قرار گرفت.');
-  };
-
-  const handleSoftDeleteLetter = (letter) => {
-    const nowStr = getNowJalaliDateTime();
-    setSecretariat((prev) => ({
-      ...prev,
-      letters: prev.letters.map((l) =>
-        l.id === letter.id
-          ? { ...l, isDeleted: true, deletedAt: nowStr, deletedBy: adminUser?.name || 'کاربر' }
-          : l
-      ),
-      indicatorLedger: prev.indicatorLedger.map((ind) =>
-        ind.letterId === letter.id ? { ...ind, isLetterDeleted: true } : ind
-      ),
-      auditLogs: [
-        {
-          id: 'log-' + Date.now(),
-          date: nowStr,
-          user: adminUser?.name || 'کاربر',
-          action: `انتقال نامه ${letter.indicatorNumber || letter.subject} به حذف‌شده‌ها (حفظ شماره اندیکاتور)`
-        },
-        ...prev.auditLogs
-      ]
-    }));
-    showToast('نامه به بخش حذف‌شده‌ها منتقل شد (شماره اندیکاتور محفوظ ماند).');
-  };
-
-  const handleRestoreLetter = (letter) => {
-    const nowStr = getNowJalaliDateTime();
-    setSecretariat((prev) => ({
-      ...prev,
-      letters: prev.letters.map((l) =>
-        l.id === letter.id ? { ...l, isDeleted: false, deletedAt: '', deletedBy: '' } : l
-      ),
-      indicatorLedger: prev.indicatorLedger.map((ind) =>
-        ind.letterId === letter.id ? { ...ind, isLetterDeleted: false } : ind
-      ),
-      auditLogs: [
-        {
-          id: 'log-' + Date.now(),
-          date: nowStr,
-          user: adminUser?.name || 'کاربر',
-          action: `بازیابی نامه ${letter.indicatorNumber || letter.subject} از حذف‌شده‌ها`
-        },
-        ...prev.auditLogs
-      ]
-    }));
-    showToast('نامه با موفقیت بازیابی شد.');
-  };
-
-  const handlePermanentDeleteLetter = (letter) => {
-    if (adminUser?.secretariatRole !== 'system_admin') {
-      showToast('فقط «مدیر سیستم» مجوز حذف دائمی نامه‌ها را دارد.', 'error');
-      return;
-    }
-    if (!window.confirm('آیا از حذف دائمی این نامه اطمینان دارید؟ سابقه شماره اندیکاتور همچنان در دفتر اندیکاتور باقی می‌ماند.')) {
-      return;
-    }
-    setSecretariat((prev) => ({
-      ...prev,
-      letters: prev.letters.filter((l) => l.id !== letter.id),
-      auditLogs: [
-        {
-          id: 'log-' + Date.now(),
-          date: getNowJalaliDateTime(),
-          user: adminUser?.name || 'مدیر سیستم',
-          action: `حذف دائمی نامه ${letter.indicatorNumber || letter.subject}`
-        },
-        ...prev.auditLogs
-      ]
-    }));
-    showToast('نامه به‌صورت دائمی حذف شد.');
-  };
-
-  const handleNavigate = (sectionId) => {
-    setActiveSection(sectionId);
-    setMobileDrawerOpen(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const openCompanyDetail = (company) => {
-    setSelectedCompanyId(company.id);
-    setActiveSection('company_detail');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  // محاسبه آمار تجمیعی ماژول اموال و تجهیزات
+  // آمار اموال
   const assetStats = useMemo(() => {
     const items = assetsState.items || [];
-    const totalRecords = items.length;
-    const totalDeliveredUnits = items.reduce((s, a) => s + computeAssetQuantities(a).currentQty, 0);
-    const pendingCompanyConfirm = items.filter((a) => a.deliveryStatus === 'ارسال‌شده برای تأیید شرکت').length;
-    const totalReturnedUnits = items.reduce((s, a) => s + computeAssetQuantities(a).returnedQty, 0);
-    const discrepancyCount = items.filter(
-      (a) => a.deliveryStatus === 'دارای مغایرت' || a.deliveryStatus === 'نیازمند اصلاح'
-    ).length;
-    const companiesWithAssets = new Set(
-      items.filter((a) => computeAssetQuantities(a).currentQty > 0).map((a) => a.companyId)
-    ).size;
+    let totalRegistered = 0;
+    let totalDelivered = 0;
+    let pendingConfirm = 0;
+    let totalReturned = 0;
+    let discrepancyCount = 0;
+    const companySet = new Set();
+
+    items.forEach((it) => {
+      const q = computeAssetQuantities(it);
+      totalRegistered += q.initialQty + q.addedQty;
+      totalDelivered += q.currentQty;
+      totalReturned += q.returnedQty;
+      if (it.confirmationStatus === 'ارسال‌شده برای تأیید شرکت') pendingConfirm++;
+      if (it.confirmationStatus === 'دارای مغایرت') discrepancyCount++;
+      if (q.currentQty > 0) companySet.add(it.companyId);
+    });
 
     return {
-      totalRecords,
-      totalDeliveredUnits,
-      pendingCompanyConfirm,
-      totalReturnedUnits,
+      totalRegistered,
+      totalDelivered,
+      pendingConfirm,
+      totalReturned,
       discrepancyCount,
-      companiesWithAssets
+      companiesWithAssets: companySet.size
     };
   }, [assetsState.items]);
 
-  // ثبت قلم اموال جدید توسط کارشناس مرکز رشد
-  const handleAddAssetItem = (newAssetPayload) => {
-    const nowStr = getNowJalaliDateTime();
-    const nextCode = `PRP-1405-${String((assetsState.items?.length || 0) + 1).padStart(3, '0')}`;
-    const qty = Math.max(1, Number(newAssetPayload.quantity) || 1);
-
-    const newItem = {
-      id: 'ast-' + Date.now(),
-      assetCode: newAssetPayload.assetCode || nextCode,
-      companyId: newAssetPayload.companyId,
-      companyName: newAssetPayload.companyName,
-      itemName: newAssetPayload.itemName,
-      category: newAssetPayload.category || 'سایر تجهیزات',
-      serialNumber: newAssetPayload.serialNumber || '',
-      physicalCondition: newAssetPayload.physicalCondition || 'سالم و نو',
-      description: newAssetPayload.description || '',
-      deliveryDate: newAssetPayload.deliveryDate || getTodayJalali(),
-      deliveredBy: adminUser?.name || 'کارشناس مرکز رشد',
-      receivedBy: newAssetPayload.receivedBy || '',
-      imageUrl: newAssetPayload.imageUrl || '',
-      deliveryStatus: newAssetPayload.sendForConfirm ? 'ارسال‌شده برای تأیید شرکت' : 'پیش‌نویس',
-      companyConfirmedBy: '',
-      companyConfirmedAt: '',
-      discrepancyNote: '',
-      discrepancyImage: '',
-      events: [
-        {
-          id: 'ev-' + Date.now(),
-          type: 'initial',
-          typeLabel: 'تحویل اولیه',
-          quantityDelta: qty,
-          date: nowStr,
-          user: adminUser?.name || 'کارشناس مرکز رشد',
-          reason: newAssetPayload.description || 'ثبت تحویل اولیه کالا به شرکت',
-          condition: newAssetPayload.physicalCondition || 'سالم و نو'
-        }
-      ]
-    };
-
-    setAssetsState((prev) => ({
-      ...prev,
-      items: [newItem, ...(prev.items || [])],
-      logs: [
-        {
-          id: 'alog-' + Date.now(),
-          date: nowStr,
-          user: adminUser?.name || 'کارشناس',
-          action: `ثبت ${toPersianDigits(qty)} عدد «${newItem.itemName}» برای شرکت ${newItem.companyName}`
-        },
-        ...(prev.logs || [])
-      ]
-    }));
-    showToast(`قلم «${newItem.itemName}» با کد ${toPersianDigits(newItem.assetCode)} ثبت شد.`);
-  };
-
-  // ثبت رویداد تغییر اموال (افزایش، کاهش، استرداد، خرابی، مفقودی، اصلاح با دلیل)
-  const handleRecordAssetEvent = (assetId, eventData) => {
-    const nowStr = getNowJalaliDateTime();
-    const evDef = ASSET_EVENT_TYPES.find((t) => t.id === eventData.type) || ASSET_EVENT_TYPES[0];
-    const absQty = Math.abs(Number(eventData.quantity) || 0);
-    const delta = evDef.sign === 0 ? 0 : evDef.sign * absQty;
-
-    setAssetsState((prev) => ({
-      ...prev,
-      items: prev.items.map((item) => {
-        if (item.id !== assetId) return item;
-        const newEvent = {
-          id: 'ev-' + Date.now(),
-          type: evDef.id,
-          typeLabel: evDef.label,
-          quantityDelta: delta,
-          date: nowStr,
-          user: adminUser?.name || 'کارشناس مرکز رشد',
-          reason: eventData.reason,
-          condition: eventData.condition || item.physicalCondition
-        };
-        return {
-          ...item,
-          physicalCondition: eventData.condition || item.physicalCondition,
-          deliveryStatus: eventData.sendForConfirm ? 'ارسال‌شده برای تأیید شرکت' : item.deliveryStatus,
-          discrepancyNote: evDef.id === 'correction' ? '' : item.discrepancyNote,
-          events: [...(item.events || []), newEvent]
-        };
-      }),
-      logs: [
-        {
-          id: 'alog-' + Date.now(),
-          date: nowStr,
-          user: adminUser?.name || 'کارشناس',
-          action: `ثبت رویداد «${evDef.label}» (${toPersianDigits(absQty)} عدد) — دلیل: ${eventData.reason}`
-        },
-        ...(prev.logs || [])
-      ]
-    }));
-    showToast(`رویداد «${evDef.label}» در سوابق قلم ثبت و موجودی به‌روزرسانی شد.`);
-  };
-
-  // تأیید الکترونیکی یا اعلام مغایرت توسط نماینده شرکت
-  const handleCompanyAssetResponse = (assetId, actionType, note = '', imageUrl = '') => {
-    const nowStr = getNowJalaliDateTime();
-    setAssetsState((prev) => ({
-      ...prev,
-      items: prev.items.map((item) => {
-        if (item.id !== assetId) return item;
-        if (actionType === 'confirm') {
-          return {
-            ...item,
-            deliveryStatus: 'تأییدشده توسط شرکت',
-            companyConfirmedBy: adminUser?.name || 'نماینده شرکت',
-            companyConfirmedAt: nowStr,
-            discrepancyNote: ''
-          };
-        }
-        return {
-          ...item,
-          deliveryStatus: 'دارای مغایرت',
-          discrepancyNote: note,
-          discrepancyImage: imageUrl || item.discrepancyImage
-        };
-      }),
-      logs: [
-        {
-          id: 'alog-' + Date.now(),
-          date: nowStr,
-          user: adminUser?.name || 'نماینده شرکت',
-          action:
-            actionType === 'confirm'
-              ? 'تأیید الکترونیکی دریافت سالم و کامل کالا توسط شرکت'
-              : `اعلام مغایرت توسط شرکت: ${note}`
-        },
-        ...(prev.logs || [])
-      ]
-    }));
-    showToast(
-      actionType === 'confirm'
-        ? 'تأیید الکترونیکی دریافت اموال با ثبت نام کاربر و زمان انجام شد.'
-        : 'گزارش مغایرت ثبت و برای کارشناس مرکز رشد ارسال شد.'
-    );
-  };
-
-  // آمار کارتابل تبدیل وضعیت شرکت‌ها
+  // آمار تبدیل وضعیت
   const upgradeStats = useMemo(() => {
     const reqs = upgradeState.requests || [];
     const pendingReview = reqs.filter((r) =>
@@ -2156,185 +1425,303 @@ export default function App() {
     return { total: reqs.length, pendingReview, returnedCount, approvedCount };
   }, [upgradeState.requests]);
 
-  // ذخیره پیش‌نویس یا ارسال درخواست تبدیل وضعیت از طرف شرکت
+  // آمار نیروی انسانی
+  const hrStats = useMemo(() => {
+    const list = hrState.personnel || [];
+    const activeList = list.filter((p) => p.cooperationStatus === 'فعال');
+    const pendingReview = list.filter((p) => p.reviewStatus === 'ارسال‌شده').length;
+    const returnedCount = list.filter((p) => p.reviewStatus === 'نیازمند اصلاح').length;
+    return {
+      total: list.length,
+      active: activeList.length,
+      pendingReview,
+      returnedCount
+    };
+  }, [hrState.personnel]);
+
+  // همگام‌سازی خودکار آمار نیروی انسانی شرکت با جدول اصلی شرکت‌ها
+  const syncCompanyStaffCount = (companyId, nextPersonnelList) => {
+    const companyActive = nextPersonnelList.filter(
+      (p) => p.companyId === companyId && p.cooperationStatus === 'فعال'
+    );
+    if (companyActive.length === 0) return;
+    const femaleCount = companyActive.filter((p) => p.gender === 'زن').length;
+    setCompanies((prev) =>
+      prev.map((c) =>
+        c.id === companyId
+          ? { ...c, totalStaff: companyActive.length, femaleStaff: femaleCount }
+          : c
+      )
+    );
+  };
+
+  // عملیات نیروی انسانی
+  const handleSavePersonnel = (personPayload, sendForReview = true) => {
+    const nowStr = getNowJalaliDateTime();
+    setHrState((prev) => {
+      const exists = prev.personnel.some((p) => p.id === personPayload.id);
+      const nextReviewStatus = sendForReview
+        ? 'ارسال‌شده'
+        : personPayload.reviewStatus || 'پیش‌نویس';
+
+      const newHistoryItem = {
+        id: 'hrh-' + Date.now(),
+        date: nowStr,
+        user: adminUser?.name || 'نماینده شرکت',
+        action: exists
+          ? sendForReview
+            ? 'ویرایش اطلاعات و ارسال جهت بررسی مرکز رشد'
+            : 'ذخیره تغییرات در پیش‌نویس'
+          : sendForReview
+          ? 'ثبت پرونده پرسنلی جدید و ارسال به مرکز رشد'
+          : 'ثبت اولیه پیش‌نویس پرسنل'
+      };
+
+      const savedPerson = {
+        ...personPayload,
+        id: personPayload.id || 'hr-' + Date.now(),
+        reviewStatus: nextReviewStatus,
+        returnNote: sendForReview ? '' : personPayload.returnNote,
+        history: [...(personPayload.history || []), newHistoryItem]
+      };
+
+      const nextPersonnel = exists
+        ? prev.personnel.map((p) => (p.id === savedPerson.id ? savedPerson : p))
+        : [savedPerson, ...prev.personnel];
+
+      syncCompanyStaffCount(savedPerson.companyId, nextPersonnel);
+      return { ...prev, personnel: nextPersonnel };
+    });
+
+    showToast(
+      sendForReview
+        ? 'اطلاعات پرسنل با موفقیت ثبت و به کارتابل مرکز رشد ارسال شد.'
+        : 'اطلاعات پرسنل به‌صورت پیش‌نویس ذخیره شد.'
+    );
+  };
+
+  const handlePersonnelStatusTransition = (personId, actionType, payload) => {
+    const nowStr = getNowJalaliDateTime();
+    setHrState((prev) => {
+      let targetCompanyId = null;
+      const nextPersonnel = prev.personnel.map((p) => {
+        if (p.id !== personId) return p;
+        targetCompanyId = p.companyId;
+        if (actionType === 'exit') {
+          return {
+            ...p,
+            cooperationStatus: 'خاتمه همکاری',
+            exitDate: payload.exitDate || getTodayJalali(),
+            exitReason: payload.exitReason || '',
+            history: [
+              ...(p.history || []),
+              {
+                id: 'hrh-' + Date.now(),
+                date: nowStr,
+                user: adminUser?.name || 'نماینده شرکت',
+                action: `ثبت خاتمه همکاری در تاریخ ${toPersianDigits(payload.exitDate || getTodayJalali())}${
+                  payload.exitReason ? ` — علت: ${payload.exitReason}` : ''
+                }`
+              }
+            ]
+          };
+        }
+        return {
+          ...p,
+          cooperationStatus: 'فعال',
+          startDate: payload.newStartDate || getTodayJalali(),
+          contractType: payload.contractType || p.contractType,
+          contractStartDate: payload.newStartDate || getTodayJalali(),
+          contractEndDate: payload.contractEndDate || '',
+          exitDate: '',
+          exitReason: '',
+          reviewStatus: 'ارسال‌شده',
+          history: [
+            ...(p.history || []),
+            {
+              id: 'hrh-' + Date.now(),
+              date: nowStr,
+              user: adminUser?.name || 'نماینده شرکت',
+              action: `ثبت دوره همکاری جدید از تاریخ ${toPersianDigits(payload.newStartDate || getTodayJalali())}`
+            }
+          ]
+        };
+      });
+
+      if (targetCompanyId) syncCompanyStaffCount(targetCompanyId, nextPersonnel);
+      return { ...prev, personnel: nextPersonnel };
+    });
+
+    showToast(
+      actionType === 'exit'
+        ? 'خاتمه همکاری فرد با حفظ کامل سوابق ثبت شد.'
+        : 'دوره همکاری جدید برای فرد ثبت و فعال شد.'
+    );
+  };
+
+  const handleCenterReviewPersonnel = (personId, decision, note = '') => {
+    const nowStr = getNowJalaliDateTime();
+    setHrState((prev) => ({
+      ...prev,
+      personnel: prev.personnel.map((p) => {
+        if (p.id !== personId) return p;
+        const isApproved = decision === 'approve';
+        return {
+          ...p,
+          reviewStatus: isApproved ? 'تأییدشده' : 'نیازمند اصلاح',
+          returnNote: isApproved ? '' : note,
+          history: [
+            ...(p.history || []),
+            {
+              id: 'hrh-' + Date.now(),
+              date: nowStr,
+              user: adminUser?.name || 'کارشناس مرکز رشد',
+              action: isApproved
+                ? 'تأیید اطلاعات پرسنلی توسط کارشناس مرکز رشد'
+                : `عودت پرونده پرسنلی برای اصلاح — توضیح: ${note}`
+            }
+          ]
+        };
+      })
+    }));
+    showToast(
+      decision === 'approve'
+        ? 'اطلاعات فرد تأیید نهایی شد.'
+        : 'درخواست اصلاح به کارتابل شرکت عودت داده شد.'
+    );
+  };
+
+  // عملیات تبدیل وضعیت شرکت
   const handleSaveUpgradeRequest = (updatedReq, submitToCenter = false) => {
     const nowStr = getNowJalaliDateTime();
     setUpgradeState((prev) => {
       const exists = prev.requests.some((r) => r.id === updatedReq.id);
-      let nextStatus = updatedReq.status;
-      const nextHistory = [...(updatedReq.history || [])];
-      const nextSnapshots = [...(updatedReq.snapshots || [])];
+      const nextStatus = submitToCenter
+        ? updatedReq.status === 'عودت‌شده برای اصلاح'
+          ? 'ارسال مجدد'
+          : 'ارسال‌شده به مرکز رشد'
+        : updatedReq.status === 'شروع‌نشده'
+        ? 'در حال تکمیل'
+        : updatedReq.status;
 
-      if (submitToCenter) {
-        const isResubmit =
-          updatedReq.status === 'عودت‌شده برای اصلاح' || (updatedReq.snapshots?.length || 0) > 0;
-        nextStatus = isResubmit ? 'ارسال مجدد' : 'ارسال‌شده به مرکز رشد';
-        const nextVer = nextSnapshots.length + 1;
-        nextSnapshots.push({
-          version: nextVer,
-          date: nowStr,
-          note: isResubmit ? `ارسال مجدد نسخه ${toPersianDigits(nextVer)} پس از اصلاح نواقص` : 'ارسال اولیه درخواست به مرکز رشد'
-        });
-        nextHistory.push({
-          id: 'uh-' + Date.now(),
-          date: nowStr,
-          user: adminUser?.name || updatedReq.registrationInfo?.ceoName || 'نماینده شرکت',
-          action: isResubmit
-            ? 'اصلاح اطلاعات و ارسال مجدد درخواست به مرکز رشد'
-            : 'تأیید نهایی و ارسال درخواست تبدیل وضعیت به مرکز رشد',
-          details: `ثبت نسخه ${toPersianDigits(nextVer)} در کارتابل مرکز رشد`
-        });
-      } else {
-        if (nextStatus === 'شروع‌نشده') nextStatus = 'در حال تکمیل';
-        nextHistory.push({
-          id: 'uh-' + Date.now(),
-          date: nowStr,
-          user: adminUser?.name || 'نماینده شرکت',
-          action: 'ذخیره اطلاعات فرم به صورت پیش‌نویس',
-          details: ''
-        });
-      }
+      const historyEntry = {
+        id: 'uh-' + Date.now(),
+        date: nowStr,
+        user: adminUser.name,
+        action: submitToCenter
+          ? 'تأیید نهایی و ارسال درخواست تبدیل وضعیت به مرکز رشد'
+          : 'ذخیره پیش‌نویس اطلاعات درخواست تبدیل وضعیت'
+      };
 
-      const finalRecord = {
+      const nextReq = {
         ...updatedReq,
         status: nextStatus,
         submittedAt: submitToCenter ? nowStr : updatedReq.submittedAt,
-        history: nextHistory,
-        snapshots: nextSnapshots
+        history: [...(updatedReq.history || []), historyEntry]
       };
 
-      const nextList = exists
-        ? prev.requests.map((r) => (r.id === finalRecord.id ? finalRecord : r))
-        : [finalRecord, ...prev.requests];
-
-      return { ...prev, requests: nextList };
+      return {
+        ...prev,
+        requests: exists
+          ? prev.requests.map((r) => (r.id === nextReq.id ? nextReq : r))
+          : [nextReq, ...prev.requests]
+      };
     });
 
     showToast(
       submitToCenter
-        ? 'درخواست تبدیل وضعیت با موفقیت ثبت و به کارتابل کارشناسان مرکز رشد ارسال شد.'
-        : 'اطلاعات فرم در پیش‌نویس ذخیره شد.'
+        ? 'درخواست تبدیل وضعیت نهایی شد و به کارتابل کارشناسان مرکز رشد ارسال گردید.'
+        : 'اطلاعات درخواست به‌صورت پیش‌نویس ذخیره شد.'
     );
   };
 
-  // عودت درخواست به شرکت جهت اصلاح توسط کارشناس مرکز رشد
-  const handleReturnUpgradeRequest = (reqId, generalNote, sectionCorrections, internalNote) => {
+  const handleReturnUpgradeRequest = (reqId, sectionRemarks, internalNote) => {
     const nowStr = getNowJalaliDateTime();
     setUpgradeState((prev) => ({
       ...prev,
       requests: prev.requests.map((r) => {
         if (r.id !== reqId) return r;
-        const flaggedSections = Object.entries(sectionCorrections)
-          .filter(([, val]) => val.needsFix)
-          .map(([k]) => UPGRADE_SECTION_TITLES[k])
-          .join('، ');
         return {
           ...r,
           status: 'عودت‌شده برای اصلاح',
-          generalReturnNote: generalNote,
-          sectionCorrections,
-          internalExpertNotes: internalNote,
-          assignedExpert: adminUser?.name || r.assignedExpert,
+          sectionRemarks,
+          internalNote,
           history: [
             ...(r.history || []),
             {
               id: 'uh-' + Date.now(),
               date: nowStr,
-              user: adminUser?.name || 'کارشناس مرکز رشد',
-              action: 'عودت درخواست برای اصلاح و تکمیل اطلاعات',
-              details: `${generalNote}${flaggedSections ? ` | بخش‌های نیازمند اصلاح: ${flaggedSections}` : ''}`
+              user: adminUser.name,
+              action: 'عودت درخواست به شرکت جهت اصلاح و تکمیل نواقص'
             }
           ]
         };
       })
     }));
-    showToast('درخواست به کارتابل شرکت عودت داده شد و نواقص اعلام گردید.');
+    showToast('درخواست با درج موارد اصلاحی به کارتابل شرکت عودت داده شد.');
   };
 
-  // تأیید نهایی تبدیل وضعیت از پیش‌رشد به رشد و به‌روزرسانی پرونده اصلی شرکت در کل سامانه
   const handleApproveUpgradeRequest = (reqId, internalNote) => {
     const nowStr = getNowJalaliDateTime();
-    const todayJalali = getTodayJalali();
-    const targetReq = upgradeState.requests.find((r) => r.id === reqId);
-    if (!targetReq) return;
+    const today = getTodayJalali();
+    let targetCompanyId = null;
 
     setUpgradeState((prev) => ({
       ...prev,
       requests: prev.requests.map((r) => {
         if (r.id !== reqId) return r;
+        targetCompanyId = r.companyId;
         return {
           ...r,
           status: 'تأییدشده و تبدیل وضعیت به رشد',
+          internalNote,
           approvedAt: nowStr,
-          internalExpertNotes: internalNote || r.internalExpertNotes,
-          assignedExpert: adminUser?.name || r.assignedExpert,
-          sectionCorrections: {
-            sec1: { needsFix: false, note: '' },
-            sec2: { needsFix: false, note: '' },
-            sec3: { needsFix: false, note: '' },
-            sec4: { needsFix: false, note: '' },
-            sec5: { needsFix: false, note: '' }
-          },
           history: [
             ...(r.history || []),
             {
               id: 'uh-' + Date.now(),
               date: nowStr,
-              user: adminUser?.name || 'مدیر / کارشناس مرکز رشد',
-              action: 'تأیید نهایی تبدیل وضعیت شرکت از «پیش‌رشد» به «رشد»',
-              details: 'وضعیت شرکت در پرونده اصلی سامانه به دوره رشد ارتقا یافت.'
+              user: adminUser.name,
+              action: 'تأیید نهایی درخواست و ارتقاء وضعیت شرکت از پیش‌رشد به رشد'
             }
           ]
         };
       })
     }));
 
-    // به‌روزرسانی مستقیم پرونده اصلی شرکت در کل سامانه
-    setCompanies((prev) =>
-      prev.map((comp) => {
-        if (comp.id !== targetReq.companyId) return comp;
-        const reg = targetReq.registrationInfo || {};
-        return {
-          ...comp,
-          name: reg.fullCompanyName || comp.name,
-          companyType: reg.companyType || comp.companyType,
-          nationalId: reg.nationalId || comp.nationalId,
-          registrationNumber: reg.registrationNumber || comp.registrationNumber,
-          establishedDate: reg.establishedDate || comp.establishedDate,
-          ceoName: reg.ceoName || comp.ceoName,
-          email: reg.officialEmail || comp.email,
-          level: 'سطح ۲ (دوره رشد)',
-          membershipStatus: 'دوره رشد (تبدیل وضعیت از پیش‌رشد)',
-          preIncubationEndDate: comp.preIncubationEndDate || todayJalali,
-          incubationEntryDate: todayJalali,
-          upgradeHistoryRecord: {
-            requestId: targetReq.id,
-            approvedAt: nowStr,
-            approvedBy: adminUser?.name || 'مرکز رشد فناوری نخبگان',
-            contractsCount: targetReq.contracts?.length || 0
-          },
-          history: [
-            {
-              date: todayJalali,
-              user: adminUser?.name || 'مرکز رشد فناوری نخبگان',
-              action: 'تبدیل وضعیت رسمی از دوره «پیش‌رشد» به دوره «رشد»'
-            },
-            ...(comp.history || [])
-          ]
-        };
-      })
-    );
+    if (targetCompanyId) {
+      setCompanies((prev) =>
+        prev.map((c) => {
+          if (c.id !== targetCompanyId) return c;
+          return {
+            ...c,
+            level: 'سطح ۲ (دوره رشد)',
+            membershipStatus: 'دوره رشد',
+            incubationEntryDate: today,
+            history: [
+              {
+                date: today,
+                user: adminUser.name,
+                action: 'تبدیل وضعیت از پیش‌رشد به رشد پس از تأیید شورای مرکز رشد'
+              },
+              ...(c.history || [])
+            ]
+          };
+        })
+      );
+    }
 
-    showToast(`تبدیل وضعیت شرکت «${targetReq.companyName}» به دوره رشد با موفقیت تأیید و در پرونده اصلی ثبت شد.`);
+    showToast('درخواست تأیید نهایی شد و وضعیت شرکت در کل سامانه از «پیش‌رشد» به «رشد» تغییر یافت.');
   };
 
+  // ساختار منوی عمودی سمت راست
   const sidebarGroups = [
     {
       id: 'portal',
-      title: 'پورتال عمومی و شرکت‌ها',
-      icon: Globe,
+      title: 'پورتال و بانک شرکت‌ها',
+      icon: Building2,
       items: [
-        { id: 'public_home', label: 'دایرکتوری عمومی شرکت‌ها', icon: Building2 },
+        { id: 'public_home', label: 'دایرکتوری عمومی شرکت‌ها', icon: Globe },
         { id: 'comp_dashboard', label: 'داشبورد آماری شرکت‌ها', icon: BarChart3 },
         { id: 'comp_list', label: 'مدیریت شرکت‌ها', icon: Layers, badge: companies.length },
         { id: 'comp_form', label: 'ثبت دستی شرکت جدید', icon: Plus },
@@ -2343,35 +1730,63 @@ export default function App() {
       ]
     },
     {
-      id: 'upgrade',
-      title: 'تبدیل وضعیت شرکت',
-      icon: TrendingUp,
+      id: 'hr',
+      title: 'مدیریت نیروی انسانی',
+      icon: Users,
       items: [
         {
-          id: 'upg_company_panel',
+          id: 'hr_company_panel',
+          label: 'پرسنل و اعضای تیم (شرکت)',
+          icon: UserPlus,
+          badge: hrStats.returnedCount > 0 ? hrStats.returnedCount : undefined,
+          highlight: hrStats.returnedCount > 0
+        },
+        {
+          id: 'hr_center_inbox',
+          label: 'مدیریت نیروی انسانی شرکت‌ها',
+          icon: UserCheck,
+          badge: hrStats.pendingReview,
+          highlight: hrStats.pendingReview > 0
+        },
+        {
+          id: 'hr_reports',
+          label: 'گزارش‌های مدیریتی و آماری',
+          icon: BarChart3
+        }
+      ]
+    },
+    {
+      id: 'upgrade',
+      title: 'تبدیل وضعیت شرکت',
+      icon: Rocket,
+      items: [
+        {
+          id: 'upg_company_form',
           label: 'پیش‌رشد به رشد (پنل شرکت)',
-          icon: Rocket,
+          icon: ClipboardList,
           badge: upgradeStats.returnedCount > 0 ? upgradeStats.returnedCount : undefined,
           highlight: upgradeStats.returnedCount > 0
         },
         {
           id: 'upg_center_inbox',
-          label: 'کارتابل تبدیل وضعیت (مرکز)',
-          icon: ClipboardList,
+          label: 'درخواست‌های تبدیل وضعیت',
+          icon: CheckSquare,
           badge: upgradeStats.pendingReview,
           highlight: upgradeStats.pendingReview > 0
         },
         {
-          id: 'upg_annual_eval',
-          label: 'ارزیابی سالانه شرکت‌ها (آتی)',
-          icon: AwardIcon,
-          disabled: true
+          id: 'upg_future_annual',
+          label: 'ارزیابی سالانه شرکت‌ها',
+          icon: Award,
+          disabled: true,
+          futureTag: 'به‌زودی'
         },
         {
-          id: 'upg_graduation',
-          label: 'خروج و رشدیافتگی (آتی)',
-          icon: CheckCircle,
-          disabled: true
+          id: 'upg_future_exit',
+          label: 'خروج و رشدیافتگی شرکت‌ها',
+          icon: Sparkles,
+          disabled: true,
+          futureTag: 'به‌زودی'
         }
       ]
     },
@@ -2381,16 +1796,16 @@ export default function App() {
       icon: Armchair,
       items: [
         { id: 'ast_dashboard', label: 'داشبورد مدیریت اموال', icon: BarChart3 },
-        { id: 'ast_manage', label: 'ثبت و مدیریت اموال تحویلی', icon: Package, badge: assetStats.totalRecords },
+        { id: 'ast_manage', label: 'ثبت و مدیریت اموال شرکت‌ها', icon: Package },
         {
           id: 'ast_company_confirm',
-          label: 'تأیید الکترونیکی شرکت',
+          label: 'تأیید اموال توسط شرکت',
           icon: ClipboardCheck,
-          badge: assetStats.pendingCompanyConfirm,
-          highlight: true
+          badge: assetStats.pendingConfirm + assetStats.discrepancyCount,
+          highlight: assetStats.pendingConfirm + assetStats.discrepancyCount > 0
         },
-        { id: 'ast_minutes', label: 'صورت‌جلسه تحویل و تحول', icon: FileSignature },
-        { id: 'ast_reports', label: 'گزارش تجمیعی اموال مرکز', icon: Scale }
+        { id: 'ast_minutes', label: 'صورت‌جلسه تحویل و تحول', icon: FileCheck },
+        { id: 'ast_reports', label: 'گزارش تجمیعی مرکز رشد', icon: FileSpreadsheet }
       ]
     },
     {
@@ -2399,200 +1814,151 @@ export default function App() {
       icon: Mail,
       items: [
         { id: 'sec_dashboard', label: 'داشبورد دبیرخانه', icon: BarChart3 },
-        { id: 'sec_incoming', label: 'نامه‌های وارده', icon: Inbox, badge: secretariatStats.incomingCount },
-        { id: 'sec_outgoing', label: 'نامه‌های صادره', icon: Send, badge: secretariatStats.outgoingCount },
-        { id: 'sec_new', label: 'ثبت نامه جدید', icon: FilePlus2 },
-        { id: 'sec_my_tasks', label: 'کارهای ارجاع‌شده به من', icon: UserCheck, badge: secretariatStats.myTasksCount, highlight: true },
-        { id: 'sec_workflow', label: 'گردش مکاتبات', icon: GitBranch },
-        { id: 'sec_drafts', label: 'پیش‌نویس‌ها', icon: FileEdit, badge: secretariatStats.draftsCount },
-        { id: 'sec_indicator', label: 'دفتر اندیکاتور', icon: BookOpen },
-        { id: 'sec_archive', label: 'بایگانی', icon: Archive },
-        { id: 'sec_trash', label: 'حذف‌شده‌ها', icon: Trash2 },
-        { id: 'sec_templates', label: 'قالب‌های نامه', icon: FileCode },
-        { id: 'sec_reports', label: 'گزارش‌ها', icon: FileSpreadsheet },
+        { id: 'sec_incoming', label: 'نامه‌های وارده', icon: Inbox, badge: secStats.incoming },
+        { id: 'sec_outgoing', label: 'نامه‌های صادره', icon: Send, badge: secStats.outgoing },
+        { id: 'sec_new', label: 'ثبت نامه جدید', icon: FilePlus },
+        { id: 'sec_mytasks', label: 'کارهای ارجاع‌شده به من', icon: Bell, badge: secStats.myTasks, highlight: secStats.myTasks > 0 },
+        { id: 'sec_drafts', label: 'پیش‌نویس‌ها', icon: FileText, badge: secStats.drafts },
+        { id: 'sec_indicator', label: 'دفتر اندیکاتور', icon: Database },
+        { id: 'sec_archive', label: 'بایگانی و حذف‌شده‌ها', icon: Archive },
+        { id: 'sec_templates', label: 'قالب‌های نامه (Word)', icon: FolderOpen },
         { id: 'sec_settings', label: 'تنظیمات دبیرخانه', icon: Settings }
       ]
     }
   ];
 
-  const renderSidebarContent = (isMobile = false) => {
-    const expanded = isMobile ? true : sidebarOpen;
-    return (
-      <div className="flex flex-col h-full bg-[#0b1f3a] text-slate-200 select-none">
-        <div className="h-20 px-4 flex items-center justify-between border-b border-blue-900/60 shrink-0">
-          <div
-            onClick={() => handleNavigate('public_home')}
-            className="flex items-center gap-3 cursor-pointer overflow-hidden"
-          >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-sky-400 flex items-center justify-center shadow-md shrink-0">
-              <Building2 className="w-6 h-6 text-white" />
-            </div>
-            {expanded && (
-              <div className="min-w-0">
-                <span className="text-[11px] font-semibold text-sky-300 block truncate">
-                  پارک فناوری پردیس
-                </span>
-                <span className="text-xs font-extrabold text-white block truncate">
-                  مرکز رشد فناوری نخبگان
-                </span>
-              </div>
-            )}
-          </div>
-
-          {!isMobile && (
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              title={sidebarOpen ? 'بستن منو' : 'باز کردن منو'}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              {sidebarOpen ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}
-            </button>
-          )}
-          {isMobile && (
-            <button
-              onClick={() => setMobileDrawerOpen(false)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
-        </div>
-
-        <div className="flex-1 overflow-y-auto py-4 px-2.5 space-y-5">
-          {sidebarGroups.map((group) => {
-            const isGroupOpen = openMenus[group.id];
-            return (
-              <div key={group.id}>
-                {expanded ? (
-                  <button
-                    onClick={() => setOpenMenus((prev) => ({ ...prev, [group.id]: !prev[group.id] }))}
-                    className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-sky-300/90 hover:text-white transition-colors"
-                  >
-                    <span className="flex items-center gap-2">
-                      <group.icon className="w-4 h-4 text-sky-400" />
-                      <span>{group.title}</span>
-                    </span>
-                    <ChevronDown
-                      className={`w-4 h-4 transition-transform ${isGroupOpen ? 'rotate-0' : 'rotate-90'}`}
-                    />
-                  </button>
-                ) : (
-                  <div className="border-t border-blue-900/50 my-2 mx-2" />
-                )}
-
-                {(isGroupOpen || !expanded) && (
-                  <div className="mt-1 space-y-1">
-                    {group.items.map((item) => {
-                      const isActive = activeSection === item.id;
-                      const IconComp = item.icon;
-                      return (
-                        <button
-                          key={item.id}
-                          disabled={item.disabled}
-                          onClick={() => {
-                            if (item.disabled) return;
-                            if (item.id === 'comp_form') setEditingCompany(null);
-                            if (item.id === 'sec_new') setEditingDraftLetter(null);
-                            handleNavigate(item.id);
-                          }}
-                          title={!expanded ? item.label : undefined}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium transition-all relative group ${
-                            item.disabled
-                              ? 'text-slate-500/70 cursor-not-allowed opacity-60'
-                              : isActive
-                              ? 'bg-gradient-to-l from-blue-600 to-blue-700 text-white font-bold shadow-md shadow-blue-950/50'
-                              : 'text-slate-300 hover:bg-white/10 hover:text-white'
-                          }`}
-                        >
-                          {isActive && (
-                            <span className="absolute right-0 top-2 bottom-2 w-1 bg-sky-300 rounded-l-full" />
-                          )}
-                          <div className="flex items-center gap-3 min-w-0">
-                            <IconComp
-                              className={`w-4 h-4 shrink-0 ${
-                                isActive ? 'text-sky-200' : 'text-slate-400 group-hover:text-sky-300'
-                              }`}
-                            />
-                            {expanded && <span className="truncate">{item.label}</span>}
-                          </div>
-
-                          {expanded && item.badge !== undefined && item.badge > 0 && (
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
-                                item.highlight
-                                  ? 'bg-amber-400 text-slate-950'
-                                  : isActive
-                                  ? 'bg-white/20 text-white'
-                                  : 'bg-slate-800 text-slate-300'
-                              }`}
-                            >
-                              {toPersianDigits(item.badge)}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="p-3 border-t border-blue-900/60 bg-[#081629] shrink-0">
-          {expanded ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-[11px] text-slate-400">
-                <span>نقش فعال در سامانه:</span>
-                <span className="text-emerald-400 font-semibold">آنلاین</span>
-              </div>
-              <select
-                value={adminUser?.secretariatRole || 'system_admin'}
-                onChange={(e) => {
-                  const chosen = SECRETARIAT_ROLES.find((r) => r.id === e.target.value);
-                  if (chosen) {
-                    setAdminUser({
-                      username: chosen.id,
-                      role: chosen.id === 'system_admin' || chosen.id === 'org_manager' ? 'admin' : 'expert',
-                      secretariatRole: chosen.id,
-                      name: chosen.userDisplayName
-                    });
-                    showToast(`نقش کاربری به «${chosen.label}» تغییر یافت.`);
-                  }
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs outline-none focus:border-sky-400"
-              >
-                {SECRETARIAT_ROLES.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.userDisplayName}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <button
-              onClick={() => setSidebarOpen(true)}
-              title={adminUser?.name}
-              className="w-full flex justify-center p-2 rounded-lg bg-slate-800 text-sky-300 hover:bg-slate-700"
-            >
-              <UserCheck className="w-5 h-5" />
-            </button>
-          )}
-        </div>
-      </div>
-    );
+  const openCompanyDetail = (company) => {
+    setSelectedCompanyId(company.id);
+    setActiveSection('company_detail');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const selectedLetter = useMemo(
-    () => secretariat.letters.find((l) => l.id === selectedLetterId) || null,
-    [secretariat.letters, selectedLetterId]
+  const renderSidebarContent = (isMobile = false) => (
+    <div className="flex flex-col h-full bg-[#0b1f3a] text-slate-200 select-none">
+      {/* برندینگ سایدبار */}
+      <div className="h-16 px-4 flex items-center justify-between border-b border-blue-900/60 shrink-0">
+        {(sidebarOpen || isMobile) && (
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-sky-400 flex items-center justify-center shrink-0">
+              <Building2 className="w-5 h-5 text-white" />
+            </div>
+            <div className="truncate">
+              <div className="text-xs font-extrabold text-white truncate">مرکز رشد فناوری نخبگان</div>
+              <div className="text-[10px] text-sky-300 truncate">پارک فناوری پردیس</div>
+            </div>
+          </div>
+        )}
+        {!isMobile && (
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            title={sidebarOpen ? 'بستن منو' : 'باز کردن منو'}
+            className="p-2 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white mx-auto"
+          >
+            {sidebarOpen ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}
+          </button>
+        )}
+      </div>
+
+      {/* لیست منوهای عمودی */}
+      <div className="flex-1 overflow-y-auto py-3 px-2.5 space-y-3">
+        {sidebarGroups.map((group) => {
+          const isExpanded = openMenus[group.id];
+          return (
+            <div key={group.id} className="space-y-1">
+              {(sidebarOpen || isMobile) && (
+                <button
+                  onClick={() => setOpenMenus((prev) => ({ ...prev, [group.id]: !prev[group.id] }))}
+                  className="w-full px-2.5 py-1.5 flex items-center justify-between text-[11px] font-bold text-sky-300/90 hover:text-white"
+                >
+                  <span>{group.title}</span>
+                  <ChevronLeft className={`w-3.5 h-3.5 transition-transform ${isExpanded ? '-rotate-90' : ''}`} />
+                </button>
+              )}
+
+              {(isExpanded || (!sidebarOpen && !isMobile)) && (
+                <div className="space-y-1">
+                  {group.items.map((item) => {
+                    const isActive = activeSection === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        disabled={item.disabled}
+                        onClick={() => !item.disabled && handleNavigate(item.id)}
+                        title={item.label}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                          item.disabled
+                            ? 'opacity-45 cursor-not-allowed text-slate-400'
+                            : isActive
+                            ? 'bg-gradient-to-l from-blue-600 to-sky-500 text-white shadow-md'
+                            : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <item.icon className="w-4 h-4 shrink-0" />
+                          {(sidebarOpen || isMobile) && <span className="truncate">{item.label}</span>}
+                        </div>
+                        {(sidebarOpen || isMobile) && item.futureTag && (
+                          <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] text-sky-300">
+                            {item.futureTag}
+                          </span>
+                        )}
+                        {(sidebarOpen || isMobile) && !item.futureTag && item.badge !== undefined && (
+                          <span
+                            className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              item.highlight
+                                ? 'bg-amber-400 text-slate-950'
+                                : isActive
+                                ? 'bg-white/20 text-white'
+                                : 'bg-white/10 text-slate-300'
+                            }`}
+                          >
+                            {toPersianDigits(item.badge)}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* انتخاب نقش کاربری فعال برای بررسی سطوح دسترسی */}
+      {(sidebarOpen || isMobile) && (
+        <div className="p-3 border-t border-blue-900/60 bg-[#081629] text-xs space-y-1.5">
+          <span className="text-[10px] text-slate-400 block">نقش کاربری فعال (تست دسترسی):</span>
+          <select
+            value={adminUser.secretariatRole}
+            onChange={(e) => {
+              const r = e.target.value;
+              const map = {
+                system_admin: { role: 'admin', name: 'مدیر سیستم مرکز رشد', companyId: 'comp-1' },
+                org_manager: { role: 'admin', name: 'رئیس مرکز رشد', companyId: 'comp-1' },
+                expert: { role: 'expert', name: 'کارشناس ارزیابی', companyId: 'comp-1' },
+                company_rep: { role: 'company', name: 'نماینده شرکت (پیش‌رشد)', companyId: 'comp-4' },
+                viewer: { role: 'viewer', name: 'کاربر مشاهده‌کننده', companyId: 'comp-1' }
+              };
+              setAdminUser({ username: r, secretariatRole: r, ...map[r] });
+              showToast(`نقش کاربری به «${map[r].name}» تغییر یافت.`);
+            }}
+            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs"
+          >
+            <option value="system_admin">مدیر سیستم (دسترسی کامل)</option>
+            <option value="org_manager">مدیر مجموعه / رئیس مرکز</option>
+            <option value="expert">کارشناس مرکز رشد</option>
+            <option value="company_rep">نماینده شرکت عضو</option>
+            <option value="viewer">کاربر مشاهده‌کننده</option>
+          </select>
+        </div>
+      )}
+    </div>
   );
 
   return (
-    <div
-      dir="rtl"
-      className="min-h-screen bg-slate-50 text-slate-800 flex font-sans selection:bg-blue-700 selection:text-white"
-    >
+    <div dir="rtl" className="min-h-screen bg-slate-50 text-slate-800 flex font-sans">
+      {/* اعلان شناور */}
       {toast && (
         <div className="fixed bottom-5 left-5 z-50 flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-xl border bg-white border-slate-200">
           {toast.type === 'success' ? (
@@ -2604,160 +1970,129 @@ export default function App() {
         </div>
       )}
 
+      {/* منوی عمودی سمت راست در دسکتاپ */}
       <aside
-        className={`hidden lg:block shrink-0 transition-all duration-300 border-l border-slate-200 no-print ${
+        className={`hidden lg:block shrink-0 transition-all duration-300 sticky top-0 h-screen z-40 no-print ${
           sidebarOpen ? 'w-72' : 'w-20'
         }`}
       >
-        <div className="sticky top-0 h-screen">{renderSidebarContent(false)}</div>
+        {renderSidebarContent(false)}
       </aside>
 
+      {/* منوی کشویی موبایل */}
       {mobileDrawerOpen && (
         <div className="fixed inset-0 z-50 lg:hidden flex no-print">
           <div className="w-72 h-full shadow-2xl">{renderSidebarContent(true)}</div>
-          <div
-            onClick={() => setMobileDrawerOpen(false)}
-            className="flex-1 bg-slate-950/60 backdrop-blur-xs"
-          />
+          <div className="flex-1 bg-slate-950/60" onClick={() => setMobileDrawerOpen(false)} />
         </div>
       )}
 
+      {/* فضای اصلی سمت چپ منو */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="bg-white border-b border-slate-200 sticky top-0 z-30 h-16 px-4 sm:px-6 flex items-center justify-between gap-4 no-print">
-          <div className="flex items-center gap-3">
+        {/* نوار بالای صفحه: جست‌وجوی سریع و اعلان‌ها */}
+        <header className="h-16 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between gap-4 sticky top-0 z-30 no-print">
+          <div className="flex items-center gap-3 flex-1">
             <button
               onClick={() => setMobileDrawerOpen(true)}
-              className="lg:hidden p-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100"
+              className="lg:hidden p-2 rounded-xl border border-slate-200 text-slate-700"
             >
               <Menu className="w-5 h-5" />
             </button>
-            <div className="hidden sm:block">
-              <h2 className="text-sm font-extrabold text-[#0f294a]">
-                سامانه یکپارچه مرکز رشد فناوری نخبگان و دبیرخانه الکترونیکی
-              </h2>
-              <p className="text-[11px] text-slate-500">
-                پارک فناوری پردیس — تاریخ امروز: {toPersianDigits(getTodayJalali())}
-              </p>
+
+            <div className="relative max-w-md w-full">
+              <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={globalQuickSearch}
+                onChange={(e) => setGlobalQuickSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && globalQuickSearch.trim()) {
+                    handleNavigate('public_home');
+                  }
+                }}
+                placeholder="جست‌وجوی سریع در شرکت‌ها، پرسنل، مکاتبات و اموال..."
+                className="w-full pr-10 pl-4 py-2 rounded-xl bg-slate-100 focus:bg-white border border-transparent focus:border-blue-500 text-xs sm:text-sm outline-none transition-all"
+              />
             </div>
           </div>
 
-          <div className="flex items-center gap-3 flex-1 max-w-xl justify-end">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={globalSearch}
-                onFocus={() => setShowGlobalSearchResults(true)}
-                onBlur={() => setTimeout(() => setShowGlobalSearchResults(false), 200)}
-                onChange={(e) => {
-                  setGlobalSearch(e.target.value);
-                  setShowGlobalSearchResults(true);
-                }}
-                placeholder="جست‌وجوی سریع شرکت‌ها، شماره اندیکاتور یا موضوع نامه..."
-                className="w-full pr-9 pl-3 py-2 rounded-xl bg-slate-100 border border-transparent focus:bg-white focus:border-blue-500 text-xs outline-none transition-all"
-              />
-
-              {showGlobalSearchResults && globalSearch.trim() && (
-                <div className="absolute left-0 right-0 top-11 bg-white rounded-2xl shadow-xl border border-slate-200 p-3 z-50 text-xs space-y-3">
-                  <div>
-                    <div className="font-bold text-slate-400 px-2 mb-1">
-                      شرکت‌ها ({toPersianDigits(globalSearchResults.companies.length)})
-                    </div>
-                    {globalSearchResults.companies.length === 0 ? (
-                      <p className="text-slate-400 px-2">موردی یافت نشد</p>
-                    ) : (
-                      globalSearchResults.companies.map((c) => (
-                        <button
-                          key={c.id}
-                          onMouseDown={() => openCompanyDetail(c)}
-                          className="w-full text-right px-2.5 py-1.5 rounded-lg hover:bg-blue-50 flex items-center justify-between"
-                        >
-                          <span className="font-bold text-slate-800">{c.name}</span>
-                          <span className="text-[11px] text-slate-500">{c.field}</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                  <div className="border-t border-slate-100 pt-2">
-                    <div className="font-bold text-slate-400 px-2 mb-1">
-                      نامه‌های دبیرخانه ({toPersianDigits(globalSearchResults.letters.length)})
-                    </div>
-                    {globalSearchResults.letters.length === 0 ? (
-                      <p className="text-slate-400 px-2">موردی یافت نشد</p>
-                    ) : (
-                      globalSearchResults.letters.map((l) => (
-                        <button
-                          key={l.id}
-                          onMouseDown={() => setSelectedLetterId(l.id)}
-                          className="w-full text-right px-2.5 py-1.5 rounded-lg hover:bg-blue-50 flex items-center justify-between gap-2"
-                        >
-                          <span className="font-bold text-slate-800 truncate">{l.subject}</span>
-                          <span className="text-[11px] font-mono text-blue-700 shrink-0">
-                            {toPersianDigits(l.indicatorNumber || 'پیش‌نویس')}
-                          </span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </div>
+          {/* اعلان‌های جدید */}
+          <div className="flex items-center gap-3 relative">
+            <button
+              onClick={() => setShowNotifDropdown(!showNotifDropdown)}
+              className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 relative"
+            >
+              <Bell className="w-5 h-5" />
+              {(secStats.myTasks + hrStats.pendingReview + upgradeStats.pendingReview + assetStats.pendingConfirm) > 0 && (
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-600 absolute top-2 right-2" />
               )}
-            </div>
+            </button>
 
-            <div className="relative">
-              <button
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 relative transition-colors"
-                title="اعلان‌های کارتابل و مهلت‌ها"
-              >
-                <Bell className="w-4 h-4" />
-                {secretariatStats.myTasksCount > 0 && (
-                  <span className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center">
-                    {toPersianDigits(secretariatStats.myTasksCount)}
-                  </span>
-                )}
-              </button>
-
-              {showNotifications && (
-                <div className="absolute left-0 top-12 w-80 bg-white rounded-2xl shadow-xl border border-slate-200 p-4 z-50 text-xs">
-                  <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-100">
-                    <span className="font-bold text-slate-900">اعلان‌های کارتابل دبیرخانه</span>
-                    <button onClick={() => setShowNotifications(false)} className="text-slate-400">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                  {secretariatStats.myTasksList.length === 0 ? (
-                    <p className="text-slate-500 py-4 text-center">اعلان جدیدی در کارتابل شما وجود ندارد.</p>
-                  ) : (
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {secretariatStats.myTasksList.map((task) => (
-                        <div
-                          key={task.id}
-                          onClick={() => {
-                            setSelectedLetterId(task.id);
-                            setShowNotifications(false);
-                          }}
-                          className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200/80 cursor-pointer hover:bg-amber-100/70"
-                        >
-                          <div className="flex justify-between font-bold text-amber-950 mb-0.5">
-                            <span>{toPersianDigits(task.indicatorNumber)}</span>
-                            {task.deadline && <span>مهلت: {toPersianDigits(task.deadline)}</span>}
-                          </div>
-                          <p className="text-slate-800 line-clamp-1">{task.subject}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+            {showNotifDropdown && (
+              <div className="absolute left-0 top-12 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-50 text-xs space-y-2.5">
+                <div className="font-bold text-slate-900 border-b pb-2 flex justify-between">
+                  <span>اعلان‌ها و کارتابل‌های فعال</span>
+                  <button onClick={() => setShowNotifDropdown(false)}>
+                    <X className="w-4 h-4 text-slate-400" />
+                  </button>
                 </div>
-              )}
+                <div
+                  onClick={() => {
+                    setShowNotifDropdown(false);
+                    handleNavigate('hr_center_inbox');
+                  }}
+                  className="p-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 cursor-pointer flex justify-between"
+                >
+                  <span>پرونده‌های پرسنلی منتظر تأیید</span>
+                  <b>{toPersianDigits(hrStats.pendingReview)} مورد</b>
+                </div>
+                <div
+                  onClick={() => {
+                    setShowNotifDropdown(false);
+                    handleNavigate('upg_center_inbox');
+                  }}
+                  className="p-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 cursor-pointer flex justify-between"
+                >
+                  <span>درخواست‌های تبدیل وضعیت پیش‌رشد به رشد</span>
+                  <b>{toPersianDigits(upgradeStats.pendingReview)} مورد</b>
+                </div>
+                <div
+                  onClick={() => {
+                    setShowNotifDropdown(false);
+                    handleNavigate('ast_company_confirm');
+                  }}
+                  className="p-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 cursor-pointer flex justify-between"
+                >
+                  <span>اموال در انتظار تأیید شرکت‌ها</span>
+                  <b>{toPersianDigits(assetStats.pendingConfirm)} مورد</b>
+                </div>
+                <div
+                  onClick={() => {
+                    setShowNotifDropdown(false);
+                    handleNavigate('sec_mytasks');
+                  }}
+                  className="p-2.5 rounded-xl bg-purple-50 hover:bg-purple-100 cursor-pointer flex justify-between"
+                >
+                  <span>مکاتبات ارجاع‌شده به شما</span>
+                  <b>{toPersianDigits(secStats.myTasks)} مورد</b>
+                </div>
+              </div>
+            )}
+
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200 text-xs font-bold text-[#0f294a]">
+              <Shield className="w-4 h-4 text-blue-600" />
+              <span>{adminUser.name}</span>
             </div>
           </div>
         </header>
 
+        {/* بدنه محتوا */}
         <main className="flex-1">
           {activeSection === 'public_home' && (
             <PublicDirectoryView
               companies={companies}
-              stats={companyStats}
+              stats={stats}
+              initialSearch={globalQuickSearch}
               onSelectCompany={openCompanyDetail}
             />
           )}
@@ -2766,12 +2101,14 @@ export default function App() {
             <CompanyProfileView
               company={companies.find((c) => c.id === selectedCompanyId)}
               companyAssets={assetsState.items.filter((a) => a.companyId === selectedCompanyId)}
+              companyPersonnel={(hrState.personnel || []).filter((p) => p.companyId === selectedCompanyId)}
+              companyVehicles={(hrState.companyVehicles || []).filter((v) => v.companyId === selectedCompanyId)}
               accessPolicies={accessPolicies}
               isAdmin={adminUser?.role === 'admin'}
               onBack={() => handleNavigate('public_home')}
               onEdit={(comp) => {
                 setEditingCompany(comp);
-                handleNavigate('comp_form');
+                setActiveSection('comp_form');
               }}
               onExportMinutes={(comp, compAssets) => {
                 exportAssetMinutesToDocx(comp, compAssets, secretariat.settings);
@@ -2780,102 +2117,14 @@ export default function App() {
             />
           )}
 
-          {activeSection === 'ast_dashboard' && (
-            <AssetsDashboardView
-              stats={assetStats}
-              assets={assetsState.items}
-              logs={assetsState.logs}
-              onNavigate={handleNavigate}
-            />
-          )}
-
-          {activeSection === 'ast_manage' && (
-            <AssetsManagementView
-              companies={companies}
-              assetsState={assetsState}
-              setAssetsState={setAssetsState}
-              adminUser={adminUser}
-              onAddAsset={handleAddAssetItem}
-              onRecordEvent={handleRecordAssetEvent}
-              onFinalizeAsset={(assetId) => {
-                const nowStr = getNowJalaliDateTime();
-                setAssetsState((prev) => ({
-                  ...prev,
-                  items: prev.items.map((a) =>
-                    a.id === assetId ? { ...a, deliveryStatus: 'نهایی‌شده' } : a
-                  ),
-                  logs: [
-                    { id: 'alog-' + Date.now(), date: nowStr, user: adminUser?.name || 'مدیر', action: 'نهایی‌سازی پرونده تحویل قلم اموال' },
-                    ...(prev.logs || [])
-                  ]
-                }));
-                showToast('وضعیت تحویل قلم به «نهایی‌شده» تغییر یافت.');
-              }}
-              showToast={showToast}
-            />
-          )}
-
-          {activeSection === 'ast_company_confirm' && (
-            <CompanyAssetConfirmationView
-              companies={companies}
-              assets={assetsState.items}
-              adminUser={adminUser}
-              onCompanyResponse={handleCompanyAssetResponse}
-            />
-          )}
-
-          {activeSection === 'ast_minutes' && (
-            <AssetMinutesView
-              companies={companies}
-              assets={assetsState.items}
-              orgSettings={secretariat.settings}
-              onExportWord={(comp, compAssets) => {
-                exportAssetMinutesToDocx(comp, compAssets, secretariat.settings);
-                showToast('صورت‌جلسه رسمی تحویل اموال در قالب Word (.docx) دانلود شد.');
-              }}
-            />
-          )}
-
-          {activeSection === 'ast_reports' && (
-            <AssetsAggregateReportView
-              companies={companies}
-              assets={assetsState.items}
-              showToast={showToast}
-            />
-          )}
-
-          {activeSection === 'upg_company_panel' && (
-            <CompanyUpgradePortalView
-              companies={companies}
-              upgradeRequests={upgradeState.requests}
-              adminUser={adminUser}
-              onSaveRequest={handleSaveUpgradeRequest}
-              showToast={showToast}
-            />
-          )}
-
-          {activeSection === 'upg_center_inbox' && (
-            <CenterUpgradeInboxView
-              companies={companies}
-              upgradeRequests={upgradeState.requests}
-              adminUser={adminUser}
-              onReturnRequest={handleReturnUpgradeRequest}
-              onApproveRequest={handleApproveUpgradeRequest}
-              showToast={showToast}
-            />
-          )}
-
           {activeSection === 'comp_dashboard' && (
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <AdminDashboardTab
-                stats={companyStats}
-                onNavigateTab={(tab) => {
-                  const map = { excel: 'comp_excel', form: 'comp_form' };
-                  handleNavigate(map[tab] || 'comp_list');
-                }}
+                stats={stats}
+                onNavigateTab={handleNavigate}
                 onEditCompany={(c) => {
                   setEditingCompany(c);
-                  handleNavigate('comp_form');
+                  setActiveSection('comp_form');
                 }}
               />
             </div>
@@ -2886,10 +2135,11 @@ export default function App() {
               <AdminCompaniesListTab
                 companies={companies}
                 setCompanies={setCompanies}
-                isSuperAdmin={adminUser?.role === 'admin'}
+                isSuperAdmin={adminUser.role === 'admin'}
+                adminUser={adminUser}
                 onEdit={(c) => {
                   setEditingCompany(c);
-                  handleNavigate('comp_form');
+                  setActiveSection('comp_form');
                 }}
                 onViewPublic={openCompanyDetail}
                 showToast={showToast}
@@ -2903,6 +2153,7 @@ export default function App() {
                 editingCompany={editingCompany}
                 companies={companies}
                 setCompanies={setCompanies}
+                adminUser={adminUser}
                 onDone={() => {
                   setEditingCompany(null);
                   handleNavigate('comp_list');
@@ -2915,7 +2166,9 @@ export default function App() {
           {activeSection === 'comp_excel' && (
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <AdminExcelImportTab
+                companies={companies}
                 setCompanies={setCompanies}
+                adminUser={adminUser}
                 onDone={() => handleNavigate('comp_list')}
                 showToast={showToast}
               />
@@ -2925,2782 +2178,178 @@ export default function App() {
           {activeSection === 'comp_settings' && (
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <AdminSettingsTab
+                companies={companies}
                 setCompanies={setCompanies}
-                isSuperAdmin={adminUser?.role === 'admin'}
-                onBackupJson={() => {
-                  const blob = new Blob([JSON.stringify(companies, null, 2)], { type: 'application/json' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `nokhbegan-companies-${getTodayJalali().replace(/\//g, '-')}.json`;
-                  a.click();
-                  showToast('فایل پشتیبان شرکت‌ها ذخیره شد.');
-                }}
-                onExportExcel={() => {
-                  if (!window.XLSX) {
-                    showToast('کتابخانه اکسل در حال بارگذاری است، لطفاً چند ثانیه صبر کنید.', 'error');
-                    return;
-                  }
-                  const ws = window.XLSX.utils.json_to_sheet(companies);
-                  const wb = window.XLSX.utils.book_new();
-                  window.XLSX.utils.book_append_sheet(wb, ws, 'شرکت‌ها');
-                  window.XLSX.writeFile(wb, 'Nokhbegan_Companies.xlsx');
-                  showToast('فایل اکسل شرکت‌ها دانلود شد.');
-                }}
+                accessPolicies={accessPolicies}
+                setAccessPolicies={setAccessPolicies}
+                isSuperAdmin={adminUser.role === 'admin'}
                 showToast={showToast}
               />
             </div>
           )}
 
-          {activeSection === 'sec_dashboard' && (
-            <SecretariatDashboardView
-              stats={secretariatStats}
-              letters={visibleLetters}
-              auditLogs={secretariat.auditLogs}
-              onNavigate={handleNavigate}
-              onOpenLetter={(id) => setSelectedLetterId(id)}
-            />
-          )}
-
-          {activeSection === 'sec_incoming' && (
-            <SecretariatLettersListView
-              mode="incoming"
-              title="مدیریت نامه‌های وارده"
-              letters={visibleLetters.filter((l) => l.type === 'incoming' && !l.isDraft && !l.isDeleted)}
-              onNewLetter={() => {
-                setEditingDraftLetter({ defaultType: 'incoming' });
-                handleNavigate('sec_new');
-              }}
-              onOpenLetter={(id) => setSelectedLetterId(id)}
-              onExportWord={(l) => exportLetterToDocx(l, secretariat.settings)}
-              onDelete={handleSoftDeleteLetter}
-            />
-          )}
-
-          {activeSection === 'sec_outgoing' && (
-            <SecretariatLettersListView
-              mode="outgoing"
-              title="مدیریت نامه‌های صادره"
-              letters={visibleLetters.filter((l) => l.type === 'outgoing' && !l.isDraft && !l.isDeleted)}
-              onNewLetter={() => {
-                setEditingDraftLetter({ defaultType: 'outgoing' });
-                handleNavigate('sec_new');
-              }}
-              onOpenLetter={(id) => setSelectedLetterId(id)}
-              onExportWord={(l) => exportLetterToDocx(l, secretariat.settings)}
-              onDelete={handleSoftDeleteLetter}
-            />
-          )}
-
-          {activeSection === 'sec_new' && (
-            <SecretariatNewLetterView
+          {/* ماژول مدیریت نیروی انسانی */}
+          {activeSection === 'hr_company_panel' && (
+            <CompanyHRPortalView
               companies={companies}
-              templates={secretariat.templates}
-              settings={secretariat.settings}
-              initialLetter={editingDraftLetter}
-              onSaveLetter={(payload, finalize) => {
-                handleSaveLetter(payload, finalize);
-                setEditingDraftLetter(null);
-                handleNavigate(finalize ? (payload.type === 'incoming' ? 'sec_incoming' : 'sec_outgoing') : 'sec_drafts');
-              }}
-              onExportWord={(l) => exportLetterToDocx(l, secretariat.settings)}
-              onCancel={() => {
-                setEditingDraftLetter(null);
-                handleNavigate('sec_dashboard');
-              }}
-              showToast={showToast}
-            />
-          )}
-
-          {activeSection === 'sec_my_tasks' && (
-            <SecretariatMyTasksView
-              tasks={secretariatStats.myTasksList}
+              hrState={hrState}
+              setHrState={setHrState}
               adminUser={adminUser}
-              onOpenLetter={(id) => setSelectedLetterId(id)}
-              onCompleteTask={(letterId, responseNote) => {
-                const nowStr = getNowJalaliDateTime();
-                setSecretariat((prev) => ({
-                  ...prev,
-                  letters: prev.letters.map((l) => {
-                    if (l.id !== letterId) return l;
-                    return {
-                      ...l,
-                      status: 'پاسخ داده‌شده',
-                      referrals: (l.referrals || []).map((r) =>
-                        r.toRole === adminUser?.secretariatRole && !r.completed
-                          ? { ...r, completed: true, response: responseNote || 'بررسی و اقدام انجام شد.' }
-                          : r
-                      )
-                    };
-                  }),
-                  auditLogs: [
-                    {
-                      id: 'log-' + Date.now(),
-                      date: nowStr,
-                      user: adminUser?.name || 'کاربر',
-                      action: 'ثبت نتیجه اقدام برای نامه'
-                    },
-                    ...prev.auditLogs
-                  ]
-                }));
-                showToast('نتیجه بررسی و اقدام در گردش مکاتبات ثبت شد.');
-              }}
-            />
-          )}
-
-          {activeSection === 'sec_workflow' && (
-            <SecretariatWorkflowView
-              letters={visibleLetters.filter((l) => !l.isDeleted && !l.isDraft)}
-              onOpenLetter={(id) => setSelectedLetterId(id)}
-            />
-          )}
-
-          {activeSection === 'sec_drafts' && (
-            <SecretariatDraftsView
-              drafts={visibleLetters.filter((l) => l.isDraft && !l.isDeleted)}
-              onNewDraft={() => {
-                setEditingDraftLetter({ defaultType: 'outgoing' });
-                handleNavigate('sec_new');
-              }}
-              onEditDraft={(draft) => {
-                setEditingDraftLetter(draft);
-                handleNavigate('sec_new');
-              }}
-              onFinalizeDraft={(draft) => {
-                handleSaveLetter(draft, true);
-                handleNavigate('sec_outgoing');
-              }}
-              onDeleteDraft={handleSoftDeleteLetter}
-            />
-          )}
-
-          {activeSection === 'sec_indicator' && (
-            <SecretariatIndicatorView
-              ledger={secretariat.indicatorLedger}
-              settings={secretariat.settings}
-              onOpenLetter={(letterId) => {
-                const found = visibleLetters.find((l) => l.id === letterId && !l.isDeleted);
-                if (found) setSelectedLetterId(letterId);
-                else showToast('این نامه در وضعیت حذف‌شده قرار دارد و شماره آن در دفتر اندیکاتور محفوظ است.', 'info');
-              }}
-            />
-          )}
-
-          {activeSection === 'sec_archive' && (
-            <SecretariatArchiveView
-              archivedLetters={visibleLetters.filter(
-                (l) => !l.isDeleted && (l.status === 'مختومه' || l.status === 'بایگانی‌شده')
-              )}
-              onOpenLetter={(id) => setSelectedLetterId(id)}
-              onExportWord={(l) => exportLetterToDocx(l, secretariat.settings)}
-            />
-          )}
-
-          {activeSection === 'sec_trash' && (
-            <SecretariatTrashView
-              deletedLetters={visibleLetters.filter((l) => l.isDeleted)}
-              isSystemAdmin={adminUser?.secretariatRole === 'system_admin'}
-              onRestore={handleRestoreLetter}
-              onPermanentDelete={handlePermanentDeleteLetter}
-            />
-          )}
-
-          {activeSection === 'sec_templates' && (
-            <SecretariatTemplatesView
-              templates={secretariat.templates}
-              onSaveTemplate={(tpl) => {
-                setSecretariat((prev) => {
-                  const exists = prev.templates.some((t) => t.id === tpl.id);
-                  const nextTpls = exists
-                    ? prev.templates.map((t) => (t.id === tpl.id ? tpl : t))
-                    : [{ ...tpl, id: 'tpl-' + Date.now() }, ...prev.templates];
-                  return {
-                    ...prev,
-                    templates: nextTpls,
-                    auditLogs: [
-                      {
-                        id: 'log-' + Date.now(),
-                        date: getNowJalaliDateTime(),
-                        user: adminUser?.name || 'کاربر',
-                        action: `ذخیره قالب نامه: «${tpl.title}»`
-                      },
-                      ...prev.auditLogs
-                    ]
-                  };
-                });
-                showToast('قالب نامه با موفقیت ذخیره شد.');
-              }}
-              onDeleteTemplate={(id) => {
-                setSecretariat((prev) => ({
-                  ...prev,
-                  templates: prev.templates.filter((t) => t.id !== id)
-                }));
-                showToast('قالب نامه حذف شد.');
-              }}
-              onUseTemplate={(tpl) => {
-                setEditingDraftLetter({
-                  defaultType: 'outgoing',
-                  subject: tpl.subjectTemplate,
-                  body: tpl.bodyTemplate,
-                  signerName: tpl.signerName,
-                  signerTitle: tpl.signerTitle
-                });
-                handleNavigate('sec_new');
-              }}
-            />
-          )}
-
-          {activeSection === 'sec_reports' && (
-            <SecretariatReportsView
-              letters={visibleLetters.filter((l) => !l.isDeleted)}
-              onOpenLetter={(id) => setSelectedLetterId(id)}
+              onSavePersonnel={handleSavePersonnel}
+              onStatusTransition={handlePersonnelStatusTransition}
               showToast={showToast}
             />
           )}
 
-          {activeSection === 'sec_settings' && (
-            <SecretariatSettingsView
+          {activeSection === 'hr_center_inbox' && (
+            <CenterHRManagementView
+              companies={companies}
+              hrState={hrState}
+              adminUser={adminUser}
+              onReviewPersonnel={handleCenterReviewPersonnel}
+              showToast={showToast}
+            />
+          )}
+
+          {activeSection === 'hr_reports' && (
+            <CenterHRReportsView companies={companies} hrState={hrState} showToast={showToast} />
+          )}
+
+          {/* ماژول تبدیل وضعیت شرکت */}
+          {activeSection === 'upg_company_form' && (
+            <CompanyUpgradePortalView
+              companies={companies}
+              upgradeState={upgradeState}
+              adminUser={adminUser}
+              onSaveRequest={handleSaveUpgradeRequest}
+              showToast={showToast}
+            />
+          )}
+
+          {activeSection === 'upg_center_inbox' && (
+            <CenterUpgradeInboxView
+              upgradeState={upgradeState}
+              adminUser={adminUser}
+              onReturnRequest={handleReturnUpgradeRequest}
+              onApproveRequest={handleApproveUpgradeRequest}
+              showToast={showToast}
+            />
+          )}
+
+          {/* ماژول اموال و تجهیزات */}
+          {activeSection === 'ast_dashboard' && (
+            <AssetsDashboardView
+              assetsState={assetsState}
+              assetStats={assetStats}
+              onNavigate={handleNavigate}
+            />
+          )}
+
+          {activeSection === 'ast_manage' && (
+            <AssetsManagementView
+              companies={companies}
+              assetsState={assetsState}
+              setAssetsState={setAssetsState}
+              adminUser={adminUser}
+              showToast={showToast}
+            />
+          )}
+
+          {activeSection === 'ast_company_confirm' && (
+            <CompanyAssetConfirmationView
+              companies={companies}
+              assetsState={assetsState}
+              setAssetsState={setAssetsState}
+              adminUser={adminUser}
+              showToast={showToast}
+            />
+          )}
+
+          {activeSection === 'ast_minutes' && (
+            <AssetMinutesView
+              companies={companies}
+              assetsState={assetsState}
+              settings={secretariat.settings}
+              showToast={showToast}
+            />
+          )}
+
+          {activeSection === 'ast_reports' && (
+            <AssetsAggregateReportView
+              companies={companies}
+              assetsState={assetsState}
+              showToast={showToast}
+            />
+          )}
+
+          {/* ماژول دبیرخانه الکترونیکی */}
+          {activeSection.startsWith('sec_') && (
+            <SecretariatModuleView
+              subSection={activeSection}
               secretariat={secretariat}
               setSecretariat={setSecretariat}
-              isSystemAdmin={adminUser?.secretariatRole === 'system_admin'}
+              secStats={secStats}
+              adminUser={adminUser}
+              onNavigate={handleNavigate}
               showToast={showToast}
             />
           )}
         </main>
-
-        {selectedLetter && (
-          <LetterDetailModal
-            letter={selectedLetter}
-            orgSettings={secretariat.settings}
-            onClose={() => setSelectedLetterId(null)}
-            onRefer={(refData) => handleReferLetter(selectedLetter.id, refData)}
-            onUpdateStatus={(newStatus) => {
-              const nowStr = getNowJalaliDateTime();
-              setSecretariat((prev) => ({
-                ...prev,
-                letters: prev.letters.map((l) =>
-                  l.id === selectedLetter.id ? { ...l, status: newStatus } : l
-                ),
-                auditLogs: [
-                  {
-                    id: 'log-' + Date.now(),
-                    date: nowStr,
-                    user: adminUser?.name || 'کاربر',
-                    action: `تغییر وضعیت نامه ${selectedLetter.indicatorNumber} به «${newStatus}»`
-                  },
-                  ...prev.auditLogs
-                ]
-              }));
-              showToast(`وضعیت نامه به «${newStatus}» تغییر یافت.`);
-            }}
-            onExportWord={() => {
-              exportLetterToDocx(selectedLetter, secretariat.settings);
-              showToast('فایل استاندارد Microsoft Word (.docx) دانلود شد.');
-            }}
-            onUploadNewWordVersion={(fileObj) => {
-              const nowStr = getNowJalaliDateTime();
-              setSecretariat((prev) => ({
-                ...prev,
-                letters: prev.letters.map((l) => {
-                  if (l.id !== selectedLetter.id) return l;
-                  const nextVer = (l.versions?.length || 0) + 1;
-                  return {
-                    ...l,
-                    attachments: [fileObj, ...(l.attachments || [])],
-                    versions: [
-                      {
-                        version: nextVer,
-                        date: nowStr,
-                        user: adminUser?.name || 'کاربر',
-                        note: `بارگذاری نسخه ویرایش‌شده Word (${fileObj.name})`
-                      },
-                      ...(l.versions || [])
-                    ]
-                  };
-                }),
-                auditLogs: [
-                  {
-                    id: 'log-' + Date.now(),
-                    date: nowStr,
-                    user: adminUser?.name || 'کاربر',
-                    action: `بارگذاری نسخه نهایی Word برای نامه ${selectedLetter.indicatorNumber}`
-                  },
-                  ...prev.auditLogs
-                ]
-              }));
-              showToast('نسخه ویرایش‌شده Word در تاریخچه نسخه‌های نامه ثبت شد.');
-            }}
-          />
-        )}
-
-        <footer className="bg-[#081629] text-slate-400 border-t border-slate-800 mt-16 no-print">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center text-xs">
-              <div>
-                <div className="flex items-center gap-2 text-white font-bold text-sm mb-1.5">
-                  <Building2 className="w-4 h-4 text-sky-400" />
-                  <span>مرکز رشد فناوری نخبگان — پارک فناوری پردیس</span>
-                </div>
-                <p className="text-slate-400 leading-5">
-                  سامانه یکپارچه بانک اطلاعات شرکت‌های فناور و اتوماسیون مکاتبات دبیرخانه الکترونیکی
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-sky-400 shrink-0" />
-                  <span>کیلومتر ۲۰ جاده دماوند، پارک فناوری پردیس</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Phone className="w-4 h-4 text-sky-400 shrink-0" />
-                  <span>دبیرخانه مرکز رشد: ۰۲۱-۷۶۲۵۰۲۵۰</span>
-                </div>
-              </div>
-              <div className="md:text-left text-slate-500">
-                <p>تمامی حقوق متعلق به پارک فناوری پردیس می‌باشد.</p>
-              </div>
-            </div>
-          </div>
-        </footer>
       </div>
     </div>
   );
 }
 
 // ============================================================================
-// ۵. کامپوننت‌های ماژول «دبیرخانه الکترونیکی»
+// ۵. دایرکتوری عمومی معرفی شرکت‌ها و صفحه اختصاصی شناسنامه شرکت
 // ============================================================================
-
-function SecretariatDashboardView({ stats, letters, auditLogs, onNavigate, onOpenLetter }) {
-  const kpiCards = [
-    { label: 'کل نامه‌های وارده', value: stats.incomingCount, icon: Inbox, color: 'text-blue-700 bg-blue-50 border-blue-200', target: 'sec_incoming' },
-    { label: 'کل نامه‌های صادره', value: stats.outgoingCount, icon: Send, color: 'text-emerald-700 bg-emerald-50 border-emerald-200', target: 'sec_outgoing' },
-    { label: 'در انتظار اقدام', value: stats.pendingCount, icon: Clock, color: 'text-amber-700 bg-amber-50 border-amber-200', target: 'sec_incoming' },
-    { label: 'نامه‌های ارجاع‌شده', value: stats.referredCount, icon: GitBranch, color: 'text-indigo-700 bg-indigo-50 border-indigo-200', target: 'sec_workflow' },
-    { label: 'دارای مهلت پاسخ', value: stats.deadlineCount, icon: AlertTriangle, color: 'text-rose-700 bg-rose-50 border-rose-200', target: 'sec_my_tasks' },
-    { label: 'نامه‌های بایگانی‌شده', value: stats.archivedCount, icon: Archive, color: 'text-slate-700 bg-slate-100 border-slate-200', target: 'sec_archive' },
-    { label: 'پیش‌نویس‌های ذخیره‌شده', value: stats.draftsCount, icon: FileEdit, color: 'text-purple-700 bg-purple-50 border-purple-200', target: 'sec_drafts' }
-  ];
-
-  const recentLetters = letters.filter((l) => !l.isDeleted).slice(0, 6);
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-[#0f294a]">
-            داشبورد دبیرخانه الکترونیکی
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            پایش لحظه‌ای مکاتبات اداری، نامه‌های وارده و صادره، ارجاعات و مهلت‌های پاسخ‌گویی
-          </p>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => onNavigate('sec_new')}
-            className="px-4 py-2.5 rounded-xl bg-[#0f294a] hover:bg-blue-800 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm"
-          >
-            <FilePlus2 className="w-4 h-4" />
-            <span>ثبت نامه جدید</span>
-          </button>
-          <button
-            onClick={() => onNavigate('sec_indicator')}
-            className="px-4 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 text-xs sm:text-sm font-semibold flex items-center gap-2"
-          >
-            <BookOpen className="w-4 h-4 text-blue-600" />
-            <span>دفتر اندیکاتور</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3.5">
-        {kpiCards.map((c, idx) => (
-          <div
-            key={idx}
-            onClick={() => onNavigate(c.target)}
-            className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer flex flex-col justify-between"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${c.color}`}>
-                <c.icon className="w-4 h-4" />
-              </div>
-              <span className="text-2xl font-extrabold text-slate-900">
-                {toPersianDigits(c.value)}
-              </span>
-            </div>
-            <span className="text-xs font-semibold text-slate-600 leading-5">{c.label}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-slate-200 flex items-center justify-between">
-            <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-              <Mail className="w-4 h-4 text-blue-600" />
-              آخرین مکاتبات ثبت‌شده در دبیرخانه
-            </h3>
-            <button
-              onClick={() => onNavigate('sec_reports')}
-              className="text-xs text-blue-700 font-semibold hover:underline"
-            >
-              مشاهده همه مکاتبات
-            </button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
-              <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                <tr>
-                  <th className="py-3 px-4">شماره اندیکاتور</th>
-                  <th className="py-3 px-4">نوع</th>
-                  <th className="py-3 px-4">موضوع نامه</th>
-                  <th className="py-3 px-4">فرستنده / گیرنده</th>
-                  <th className="py-3 px-4">وضعیت</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {recentLetters.map((l) => (
-                  <tr
-                    key={l.id}
-                    onClick={() => onOpenLetter(l.id)}
-                    className="hover:bg-blue-50/50 cursor-pointer transition-colors"
-                  >
-                    <td className="py-3 px-4 font-mono font-bold text-blue-800">
-                      {toPersianDigits(l.indicatorNumber || 'پیش‌نویس')}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`px-2 py-0.5 rounded-full font-semibold ${
-                          l.type === 'incoming'
-                            ? 'bg-blue-50 text-blue-700'
-                            : l.type === 'outgoing'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {l.type === 'incoming' ? 'وارده' : l.type === 'outgoing' ? 'صادره' : 'داخلی'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-slate-800 max-w-xs truncate">
-                      {l.subject}
-                    </td>
-                    <td className="py-3 px-4 text-slate-600 truncate max-w-[140px]">
-                      {l.type === 'incoming' ? l.senderOrg || l.senderName : l.recipientOrg || l.recipientName}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 font-medium">
-                        {l.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-          <h3 className="font-bold text-slate-900 text-sm mb-4 flex items-center gap-2">
-            <History className="w-4 h-4 text-blue-600" />
-            آخرین فعالیت‌های ثبت‌شده
-          </h3>
-          <div className="space-y-3 max-h-80 overflow-y-auto">
-            {(auditLogs || []).slice(0, 8).map((log) => (
-              <div key={log.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
-                <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                  <span className="font-semibold text-slate-600">{log.user}</span>
-                  <span dir="ltr">{toPersianDigits(log.date)}</span>
-                </div>
-                <p className="text-slate-800 leading-5">{log.action}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SecretariatLettersListView({
-  mode,
-  title,
-  letters,
-  onNewLetter,
-  onOpenLetter,
-  onExportWord,
-  onDelete
-}) {
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('همه');
-  const [yearFilter, setYearFilter] = useState('همه');
-
-  const years = ['همه', ...new Set(letters.map((l) => l.year).filter(Boolean))];
-  const statuses = ['همه', ...new Set(letters.map((l) => l.status).filter(Boolean))];
-
-  const filtered = letters.filter((l) => {
-    const q = search.trim().toLowerCase();
-    const matchQ =
-      !q ||
-      (l.subject && l.subject.toLowerCase().includes(q)) ||
-      (l.indicatorNumber && l.indicatorNumber.toLowerCase().includes(q)) ||
-      (l.senderOrg && l.senderOrg.toLowerCase().includes(q)) ||
-      (l.recipientOrg && l.recipientOrg.toLowerCase().includes(q)) ||
-      (l.originLetterNumber && l.originLetterNumber.toLowerCase().includes(q));
-    const matchStatus = statusFilter === 'همه' || l.status === statusFilter;
-    const matchYear = yearFilter === 'همه' || l.year === yearFilter;
-    return matchQ && matchStatus && matchYear;
-  });
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-extrabold text-[#0f294a]">{title}</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            تعداد کل رکوردها: {toPersianDigits(filtered.length)} نامه
-          </p>
-        </div>
-        <button
-          onClick={onNewLetter}
-          className="px-4 py-2.5 rounded-xl bg-[#0f294a] hover:bg-blue-800 text-white text-xs sm:text-sm font-bold flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          <span>{mode === 'incoming' ? 'ثبت نامه وارده جدید' : 'ایجاد نامه صادره جدید'}</span>
-        </button>
-      </div>
-
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm grid grid-cols-1 sm:grid-cols-4 gap-3">
-        <div className="sm:col-span-2 relative">
-          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="جست‌وجو بر اساس شماره اندیکاتور، موضوع، سازمان یا شماره نامه مبدأ..."
-            className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-300 text-xs outline-none focus:border-blue-600"
-          />
-        </div>
-        <select
-          value={yearFilter}
-          onChange={(e) => setYearFilter(e.target.value)}
-          className="px-3 py-2 rounded-xl border border-slate-300 text-xs bg-slate-50"
-        >
-          {years.map((y) => (
-            <option key={y} value={y}>
-              سال: {toPersianDigits(y)}
-            </option>
-          ))}
-        </select>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 rounded-xl border border-slate-300 text-xs bg-slate-50"
-        >
-          {statuses.map((s) => (
-            <option key={s} value={s}>
-              وضعیت: {s}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-right text-xs">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-              <tr>
-                <th className="py-3.5 px-4">شماره اندیکاتور</th>
-                <th className="py-3.5 px-4">تاریخ</th>
-                <th className="py-3.5 px-4">{mode === 'incoming' ? 'فرستنده / سازمان' : 'گیرنده / سازمان'}</th>
-                <th className="py-3.5 px-4">موضوع نامه</th>
-                <th className="py-3.5 px-4">فوریت / محرمانگی</th>
-                <th className="py-3.5 px-4">وضعیت</th>
-                <th className="py-3.5 px-4 text-center">عملیات</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-10 text-center text-slate-400">
-                    نامه‌ای با این مشخصات یافت نشد.
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((l) => (
-                  <tr key={l.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-3.5 px-4 font-mono font-bold text-blue-800">
-                      {toPersianDigits(l.indicatorNumber)}
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-600">{toPersianDigits(l.letterDate)}</td>
-                    <td className="py-3.5 px-4">
-                      <div className="font-bold text-slate-800">
-                        {mode === 'incoming' ? l.senderOrg || l.senderName : l.recipientOrg || l.recipientName}
-                      </div>
-                      {mode === 'incoming' && l.originLetterNumber && (
-                        <div className="text-[11px] text-slate-400">
-                          شماره مبدأ: {toPersianDigits(l.originLetterNumber)}
-                        </div>
-                      )}
-                    </td>
-                    <td
-                      onClick={() => onOpenLetter(l.id)}
-                      className="py-3.5 px-4 font-semibold text-slate-900 hover:text-blue-700 cursor-pointer max-w-xs truncate"
-                    >
-                      {l.subject}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-1">
-                        <span
-                          className={`px-2 py-0.5 rounded-md font-semibold ${
-                            l.priority === 'آنی'
-                              ? 'bg-rose-100 text-rose-800'
-                              : l.priority === 'فوری'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {l.priority}
-                        </span>
-                        {l.confidentiality !== 'عادی' && (
-                          <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 font-semibold">
-                            {l.confidentiality}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-800 font-semibold">
-                        {l.status}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => onOpenLetter(l.id)}
-                          title="مشاهده، ارجاع و جزئیات"
-                          className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => onExportWord(l)}
-                          title="دریافت فایل Word (.docx)"
-                          className="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50"
-                        >
-                          <FileText className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => onDelete(l)}
-                          title="انتقال به حذف‌شده‌ها"
-                          className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SecretariatNewLetterView({
-  companies,
-  templates,
-  settings,
-  initialLetter,
-  onSaveLetter,
-  onExportWord,
-  onCancel,
-  showToast
-}) {
-  const [form, setForm] = useState(() => ({
-    id: initialLetter?.id || '',
-    type: initialLetter?.type || initialLetter?.defaultType || 'incoming',
-    indicatorNumber: initialLetter?.indicatorNumber || '',
-    senderType: initialLetter?.senderType || 'حقوقی',
-    senderName: initialLetter?.senderName || '',
-    senderOrg: initialLetter?.senderOrg || '',
-    originLetterNumber: initialLetter?.originLetterNumber || '',
-    letterDate: initialLetter?.letterDate || getTodayJalali(),
-    receiptDate: initialLetter?.receiptDate || getTodayJalali(),
-    recipientName: initialLetter?.recipientName || '',
-    recipientOrg: initialLetter?.recipientOrg || '',
-    subject: initialLetter?.subject || '',
-    summary: initialLetter?.summary || '',
-    body: initialLetter?.body || '',
-    priority: initialLetter?.priority || 'عادی',
-    confidentiality: initialLetter?.confidentiality || 'عادی',
-    status: initialLetter?.status || 'ثبت اولیه',
-    deadline: initialLetter?.deadline || '',
-    assignedToRole: initialLetter?.assignedToRole || 'org_manager',
-    assignedToName: initialLetter?.assignedToName || 'دکتر رضایی (رئیس مرکز رشد)',
-    ccList: initialLetter?.ccList || [],
-    signerName: initialLetter?.signerName || 'دکتر حمیدرضا رضایی',
-    signerTitle: initialLetter?.signerTitle || 'رئیس مرکز رشد فناوری نخبگان',
-    attachments: initialLetter?.attachments || [],
-    versions: initialLetter?.versions || [],
-    referrals: initialLetter?.referrals || []
-  }));
-
-  const [ccInput, setCcInput] = useState('');
-  const [showPreview, setShowPreview] = useState(false);
-
-  const handleApplyTemplate = (tplId) => {
-    const tpl = templates.find((t) => t.id === tplId);
-    if (!tpl) return;
-    const targetName = form.recipientOrg || form.recipientName || 'شرکت محترم';
-    const subj = tpl.subjectTemplate
-      .replace('{{گیرنده}}', targetName)
-      .replace('{{موضوع}}', form.subject || 'فناوری');
-    const body = tpl.bodyTemplate
-      .replace(/\{\{گیرنده\}\}/g, targetName)
-      .replace(/\{\{موضوع\}\}/g, form.subject || 'فناوری')
-      .replace(/\{\{تاریخ\}\}/g, form.letterDate);
-
-    setForm((prev) => ({
-      ...prev,
-      subject: subj,
-      body,
-      signerName: tpl.signerName || prev.signerName,
-      signerTitle: tpl.signerTitle || prev.signerTitle
-    }));
-    showToast(`قالب «${tpl.title}» اعمال شد.`);
-  };
-
-  const handleFileAttach = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    files.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const newAtt = {
-          id: 'att-' + Date.now() + Math.random().toString(16).slice(2, 5),
-          name: file.name,
-          size: `${Math.max(1, Math.round(file.size / 1024))} KB`,
-          type: file.type,
-          dataUrl: reader.result,
-          date: getTodayJalali()
-        };
-        setForm((prev) => ({ ...prev, attachments: [...prev.attachments, newAtt] }));
-      };
-      reader.readAsDataURL(file);
-    });
-    showToast(`${toPersianDigits(files.length)} فایل پیوست اضافه شد.`);
-  };
-
-  const handleSubmit = (finalize) => {
-    if (!form.subject.trim()) {
-      showToast('وارد کردن «موضوع نامه» الزامی است.', 'error');
-      return;
-    }
-    onSaveLetter(form, finalize);
-  };
-
-  return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-extrabold text-[#0f294a]">
-              {form.id ? 'ویرایش مکاتبه / پیش‌نویس' : 'ثبت نامه جدید در دبیرخانه الکترونیکی'}
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              شماره اندیکاتور نامه صادره پس از «تأیید و ثبت نهایی» به‌صورت خودکار و یکتا تخصیص می‌یابد.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowPreview(!showPreview)}
-              className="px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 text-xs font-semibold flex items-center gap-1.5"
-            >
-              <Eye className="w-4 h-4" />
-              <span>{showPreview ? 'بازگشت به فرم' : 'پیش‌نمایش سربرگ'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onExportWord(form)}
-              className="px-3.5 py-2 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-200 text-xs font-semibold flex items-center gap-1.5"
-            >
-              <Download className="w-4 h-4" />
-              <span>خروجی Word (.docx)</span>
-            </button>
-          </div>
-        </div>
-
-        {showPreview ? (
-          <div className="p-8 bg-slate-100">
-            <OfficialLetterPaper letter={form} settings={settings} />
-          </div>
-        ) : (
-          <div className="p-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl bg-blue-50/60 border border-blue-200/80">
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1.5">نوع مکاتبه</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'incoming', label: 'نامه وارده' },
-                    { id: 'outgoing', label: 'نامه صادره' },
-                    { id: 'internal', label: 'مکاتبه داخلی' }
-                  ].map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setForm((p) => ({ ...p, type: t.id }))}
-                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
-                        form.type === t.id
-                          ? 'bg-[#0f294a] text-white border-[#0f294a]'
-                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                  استفاده از قالب آماده نامه‌نگاری
-                </label>
-                <select
-                  onChange={(e) => handleApplyTemplate(e.target.value)}
-                  defaultValue=""
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs bg-white"
-                >
-                  <option value="" disabled>
-                    — انتخاب قالب استاندارد سازمانی —
-                  </option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.title} ({t.category})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {form.type === 'incoming' ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">نوع فرستنده</label>
-                  <select
-                    value={form.senderType}
-                    onChange={(e) => setForm({ ...form, senderType: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white"
-                  >
-                    <option value="حقوقی">شخص حقوقی (شرکت / سازمان)</option>
-                    <option value="حقیقی">شخص حقیقی</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    شرکت یا سازمان فرستنده
-                  </label>
-                  <input
-                    list="companies-datalist"
-                    value={form.senderOrg}
-                    onChange={(e) => setForm({ ...form, senderOrg: e.target.value })}
-                    placeholder="نام شرکت یا سازمان..."
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">نام و سمت فرستنده</label>
-                  <input
-                    type="text"
-                    value={form.senderName}
-                    onChange={(e) => setForm({ ...form, senderName: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">شماره نامه مبدأ (فرستنده)</label>
-                  <input
-                    type="text"
-                    value={form.originLetterNumber}
-                    onChange={(e) => setForm({ ...form, originLetterNumber: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">تاریخ نامه مبدأ (شمسی)</label>
-                  <input
-                    type="text"
-                    dir="ltr"
-                    value={form.letterDate}
-                    onChange={(e) => setForm({ ...form, letterDate: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">تاریخ دریافت در دبیرخانه</label>
-                  <input
-                    type="text"
-                    dir="ltr"
-                    value={form.receiptDate}
-                    onChange={(e) => setForm({ ...form, receiptDate: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    سازمان یا شرکت مخاطب (گیرنده)
-                  </label>
-                  <input
-                    list="companies-datalist"
-                    value={form.recipientOrg}
-                    onChange={(e) => setForm({ ...form, recipientOrg: e.target.value })}
-                    placeholder="انتخاب شرکت عضو یا تایپ سازمان..."
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    شخص یا مقام دریافت‌کننده
-                  </label>
-                  <input
-                    type="text"
-                    value={form.recipientName}
-                    onChange={(e) => setForm({ ...form, recipientName: e.target.value })}
-                    placeholder="مثال: مدیرعامل محترم شرکت..."
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">تاریخ نامه (شمسی)</label>
-                  <input
-                    type="text"
-                    dir="ltr"
-                    value={form.letterDate}
-                    onChange={(e) => setForm({ ...form, letterDate: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                  />
-                </div>
-              </div>
-            )}
-
-            <datalist id="companies-datalist">
-              {companies.map((c) => (
-                <option key={c.id} value={c.name} />
-              ))}
-            </datalist>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  موضوع نامه <span className="text-rose-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={form.subject}
-                  onChange={(e) => setForm({ ...form, subject: e.target.value })}
-                  placeholder="موضوع دقیق مکاتبه را وارد کنید..."
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">طبقه‌بندی و فوریت</label>
-                <select
-                  value={form.priority}
-                  onChange={(e) => setForm({ ...form, priority: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white"
-                >
-                  <option value="عادی">عادی</option>
-                  <option value="فوری">فوری</option>
-                  <option value="آنی">آنی</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">سطح محرمانگی</label>
-                <select
-                  value={form.confidentiality}
-                  onChange={(e) => setForm({ ...form, confidentiality: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white"
-                >
-                  <option value="عادی">عادی</option>
-                  <option value="محرمانه">محرمانه</option>
-                  <option value="خیلی محرمانه">خیلی محرمانه</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1">متن و شرح نامه</label>
-              <textarea
-                rows={7}
-                value={form.body}
-                onChange={(e) => setForm({ ...form, body: e.target.value })}
-                placeholder="متن کامل نامه یا خلاصه نامه وارده را بنویسید..."
-                className="w-full p-4 rounded-xl border border-slate-300 text-sm leading-7"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">نام امضاکننده</label>
-                <input
-                  type="text"
-                  value={form.signerName}
-                  onChange={(e) => setForm({ ...form, signerName: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">سمت امضاکننده</label>
-                <input
-                  type="text"
-                  value={form.signerTitle}
-                  onChange={(e) => setForm({ ...form, signerTitle: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">مهلت پاسخ‌گویی (اختیاری)</label>
-                <input
-                  type="text"
-                  dir="ltr"
-                  placeholder="1405/02/10"
-                  value={form.deadline}
-                  onChange={(e) => setForm({ ...form, deadline: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                />
-              </div>
-            </div>
-
-            {/* رونوشت‌ها و پیوست‌ها */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">گیرندگان رونوشت</label>
-                <div className="flex gap-2 mb-2">
-                  <input
-                    type="text"
-                    value={ccInput}
-                    onChange={(e) => setCcInput(e.target.value)}
-                    placeholder="نام واحد یا شخص جهت رونوشت..."
-                    className="flex-1 px-3 py-1.5 rounded-xl border border-slate-300 text-xs"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!ccInput.trim()) return;
-                      setForm((p) => ({ ...p, ccList: [...p.ccList, ccInput.trim()] }));
-                      setCcInput('');
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-slate-800 text-white text-xs font-semibold"
-                  >
-                    افزودن
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {form.ccList.map((cc, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs flex items-center gap-1"
-                    >
-                      {cc}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setForm((p) => ({ ...p, ccList: p.ccList.filter((_, i) => i !== idx) }))
-                        }
-                      >
-                        <X className="w-3 h-3 text-rose-600" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  پیوست فایل‌ها (PDF, Word, تصاویر)
-                </label>
-                <input
-                  type="file"
-                  multiple
-                  accept=".pdf,.doc,.docx,image/*"
-                  onChange={handleFileAttach}
-                  className="block w-full text-xs text-slate-600 mb-2"
-                />
-                <div className="space-y-1">
-                  {form.attachments.map((att) => (
-                    <div
-                      key={att.id}
-                      className="text-xs bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 flex justify-between"
-                    >
-                      <span className="truncate">{att.name}</span>
-                      <span className="text-slate-400">{att.size}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-4 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={onCancel}
-                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold"
-              >
-                انصراف
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSubmit(false)}
-                className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold"
-              >
-                ذخیره به عنوان پیش‌نویس
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSubmit(true)}
-                className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm"
-              >
-                تأیید، ثبت نهایی و صدور شماره اندیکاتور
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CompanyProfileView({ company, companyAssets = [], accessPolicies, isAdmin, onBack, onEdit, onExportMinutes }) {
-  const [profileTab, setProfileTab] = useState('general');
-  if (!company) return null;
-  const canShowInvestment = isAdmin || (accessPolicies.investmentData !== 'admin_only' && company.publishInvestment);
-  const canShowSales = isAdmin || (accessPolicies.salesData !== 'admin_only' && company.publishSales);
-
-  return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6 no-print">
-        <button
-          onClick={onBack}
-          className="px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium flex items-center gap-2"
-        >
-          <ArrowRight className="w-4 h-4" />
-          <span>بازگشت به فهرست شرکت‌ها</span>
-        </button>
-        <div className="flex items-center gap-2.5">
-          {isAdmin && (
-            <button
-              onClick={() => onEdit(company)}
-              className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-sm font-semibold flex items-center gap-1.5"
-            >
-              <Edit className="w-4 h-4" />
-              <span>ویرایش اطلاعات</span>
-            </button>
-          )}
-          <button
-            onClick={() => window.print()}
-            className="px-4 py-2 rounded-xl bg-[#0f294a] text-white text-sm font-semibold flex items-center gap-1.5"
-          >
-            <Printer className="w-4 h-4" />
-            <span>دریافت PDF / چاپ</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="bg-gradient-to-l from-[#0b1f3a] to-[#1e3a8a] text-white p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center gap-5">
-          <CompanyAvatar company={company} size="lg" />
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold mb-1">{company.name}</h1>
-            <p className="text-sky-200 text-sm">{company.field}</p>
-          </div>
-        </div>
-
-        {/* تب‌های پرونده شرکت: شناسنامه عمومی و تب مستقل «اموال تحویلی» */}
-        <div className="flex border-b border-slate-200 bg-slate-50 px-6 pt-3 gap-2 no-print">
-          <button
-            onClick={() => setProfileTab('general')}
-            className={`px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition-colors ${
-              profileTab === 'general'
-                ? 'bg-white text-[#0f294a] border-t border-x border-slate-200'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            شناسنامه عمومی و محصولات
-          </button>
-          <button
-            onClick={() => setProfileTab('assets')}
-            className={`px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-colors ${
-              profileTab === 'assets'
-                ? 'bg-white text-[#0f294a] border-t border-x border-slate-200'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Armchair className="w-4 h-4 text-blue-600" />
-            <span>اموال تحویلی ({toPersianDigits(companyAssets.length)})</span>
-          </button>
-        </div>
-
-        {profileTab === 'assets' ? (
-          <div className="p-6 sm:p-8 space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-bold text-[#0f294a]">
-                  گزارش اموال و تجهیزات تحویلی به {company.name}
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  محاسبه خودکار موجودی اولیه، اضافه‌شده، مستردشده و سوابق کامل تحویل و تحول
-                </p>
-              </div>
-              {companyAssets.length > 0 && onExportMinutes && (
-                <button
-                  onClick={() => onExportMinutes(company, companyAssets)}
-                  className="px-4 py-2 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-200 text-xs font-bold flex items-center gap-1.5 no-print"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>دانلود صورت‌جلسه Word (.docx)</span>
-                </button>
-              )}
-            </div>
-
-            {companyAssets.length === 0 ? (
-              <div className="p-8 rounded-2xl bg-slate-50 border border-slate-200 text-center text-sm text-slate-500">
-                تاکنون اموالی برای این شرکت ثبت نشده است.
-              </div>
-            ) : (
-              <>
-                <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-                  <table className="w-full text-right text-xs">
-                    <thead className="bg-slate-50 text-slate-700 border-b border-slate-200">
-                      <tr>
-                        <th className="py-3 px-3">کد و نام قلم</th>
-                        <th className="py-3 px-3 text-center">تعداد اولیه</th>
-                        <th className="py-3 px-3 text-center">اضافه‌شده</th>
-                        <th className="py-3 px-3 text-center">مستردشده</th>
-                        <th className="py-3 px-3 text-center">تعداد فعلی</th>
-                        <th className="py-3 px-3">وضعیت تأیید شرکت</th>
-                        <th className="py-3 px-3">آخرین تغییر</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {companyAssets.map((asset) => {
-                        const q = computeAssetQuantities(asset);
-                        return (
-                          <tr key={asset.id} className="hover:bg-slate-50">
-                            <td className="py-3 px-3">
-                              <div className="font-bold text-slate-900">{asset.itemName}</div>
-                              <div className="text-[11px] font-mono text-slate-500">
-                                {toPersianDigits(asset.assetCode)} {asset.serialNumber ? `| سریال: ${toPersianDigits(asset.serialNumber)}` : ''}
-                              </div>
-                            </td>
-                            <td className="py-3 px-3 text-center font-semibold">{toPersianDigits(q.initialQty)}</td>
-                            <td className="py-3 px-3 text-center text-emerald-700 font-semibold">
-                              +{toPersianDigits(q.addedQty)}
-                            </td>
-                            <td className="py-3 px-3 text-center text-rose-700 font-semibold">
-                              -{toPersianDigits(q.returnedQty)}
-                            </td>
-                            <td className="py-3 px-3 text-center">
-                              <span className="px-2.5 py-0.5 rounded-lg bg-blue-100 text-blue-900 font-extrabold">
-                                {toPersianDigits(q.currentQty)}
-                              </span>
-                            </td>
-                            <td className="py-3 px-3">
-                              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 font-semibold">
-                                {asset.deliveryStatus}
-                              </span>
-                            </td>
-                            <td className="py-3 px-3 text-slate-500" dir="ltr">
-                              {toPersianDigits(q.lastChangeDate)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* سوابق کامل تحویل و تحول */}
-                <div className="space-y-3">
-                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                    <History className="w-4 h-4 text-blue-600" />
-                    سوابق کامل رویدادهای تحویل و تحول اموال شرکت
-                  </h3>
-                  {companyAssets.map((asset) =>
-                    (asset.events || []).map((ev) => (
-                      <div key={ev.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex flex-wrap justify-between gap-2">
-                        <div>
-                          <span className="font-bold text-blue-900">{asset.itemName}</span> —{' '}
-                          <span className="font-semibold text-slate-800">{ev.typeLabel}</span> (
-                          <b dir="ltr">{ev.quantityDelta > 0 ? `+${toPersianDigits(ev.quantityDelta)}` : toPersianDigits(ev.quantityDelta)}</b>):{' '}
-                          <span className="text-slate-600">{ev.reason}</span>
-                        </div>
-                        <span className="text-slate-400" dir="ltr">
-                          {toPersianDigits(ev.date)} | {ev.user}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="p-6 sm:p-8 border-b border-slate-200">
-              <h2 className="text-base font-bold text-[#0f294a] mb-3">معرفی عمومی و اطلاعات ارتباطی</h2>
-              <p className="text-sm text-slate-700 leading-7 mb-5">{company.shortDesc}</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/70">
-                  <span className="text-xs text-slate-500 block">نوع شرکت</span>
-                  <b>{company.companyType || '—'}</b>
-                </div>
-                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/70">
-                  <span className="text-xs text-slate-500 block">تاریخ تأسیس</span>
-                  <b>{toPersianDigits(company.establishedDate) || '—'}</b>
-                </div>
-                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/70">
-                  <span className="text-xs text-slate-500 block">تلفن تماس</span>
-                  <b dir="ltr">{toPersianDigits(company.landline) || '—'}</b>
-                </div>
-                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/70">
-                  <span className="text-xs text-slate-500 block">ایمیل رسمی</span>
-                  <b className="text-xs">{company.email || '—'}</b>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 sm:p-8 border-b border-slate-200">
-              <h2 className="text-base font-bold text-[#0f294a] mb-4">محصولات و خدمات</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {(company.products || []).map((prod, idx) => (
-                  <div key={idx} className="p-4 rounded-xl border border-slate-200 bg-slate-50/60">
-                    <h3 className="font-bold text-sm text-slate-900">{prod.name}</h3>
-                    {prod.brand && <span className="text-xs text-blue-700 block mb-1">برند: {prod.brand}</span>}
-                    <p className="text-xs text-slate-600 leading-6">{prod.description}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="p-6 sm:p-8 grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
-              <div>
-                <h3 className="font-bold text-[#0f294a] mb-3">اطلاعات کسب‌وکار</h3>
-                <p className="mb-1">مدل درآمدی: <b>{company.revenueModel || '—'}</b></p>
-                <p className="mb-1">مخاطبان: <b>{company.targetAudience || '—'}</b></p>
-                {canShowInvestment && company.investmentAmount && (
-                  <p className="text-emerald-700">سرمایه‌گذاری جذب‌شده: <b>{toPersianDigits(company.investmentAmount)}</b></p>
-                )}
-                {canShowSales && company.salesYear1 && (
-                  <p className="text-blue-700 mt-1">فروش سال اول: <b>{toPersianDigits(company.salesYear1)}</b></p>
-                )}
-              </div>
-              <div>
-                <h3 className="font-bold text-[#0f294a] mb-3">سرمایه انسانی</h3>
-                <p className="mb-1">کل نیروی انسانی: <b>{toPersianDigits(company.totalStaff || 0)} نفر</b></p>
-                <p className="mb-1">تعداد بانوان: <b>{toPersianDigits(company.femaleStaff || 0)} نفر</b></p>
-                <p>نیروی ابتدای ورود: <b>{toPersianDigits(company.initialStaff || 0)} نفر</b></p>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SecretariatMyTasksView({ tasks, adminUser, onOpenLetter, onCompleteTask }) {
-  const [responseTexts, setResponseTexts] = useState({});
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div>
-        <h1 className="text-xl font-extrabold text-[#0f294a]">
-          کارتابل شخصی: کارهای ارجاع‌شده به من
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          کاربر فعال: <b>{adminUser?.name}</b> — تعداد مکاتبات منتظر اقدام: {toPersianDigits(tasks.length)} مورد
-        </p>
-      </div>
-
-      {tasks.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
-          <CheckSquare className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
-          <h3 className="font-bold text-slate-800">کارتابل شما به‌روز است</h3>
-          <p className="text-xs text-slate-500 mt-1">هیچ نامه ارجاع‌شده‌ای در انتظار اقدام شما نیست.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {tasks.map((task) => {
-            const latestRef = (task.referrals || []).find(
-              (r) => r.toRole === adminUser?.secretariatRole && !r.completed
-            );
-            return (
-              <div
-                key={task.id}
-                className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono text-xs font-bold text-blue-800 bg-blue-50 px-2.5 py-0.5 rounded-lg">
-                        {toPersianDigits(task.indicatorNumber)}
-                      </span>
-                      {latestRef && (
-                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800">
-                          نوع ارجاع: {latestRef.referralType}
-                        </span>
-                      )}
-                      {task.deadline && (
-                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700">
-                          مهلت اقدام: {toPersianDigits(task.deadline)}
-                        </span>
-                      )}
-                    </div>
-                    <h3
-                      onClick={() => onOpenLetter(task.id)}
-                      className="font-bold text-base text-slate-900 hover:text-blue-700 cursor-pointer"
-                    >
-                      {task.subject}
-                    </h3>
-                    {latestRef && (
-                      <p className="text-xs text-slate-600 mt-1">
-                        ارجاع‌دهنده: <b>{latestRef.fromUser}</b> — هامش / دستور: «{latestRef.instructions}»
-                      </p>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={() => onOpenLetter(task.id)}
-                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold"
-                  >
-                    مشاهده متن کامل و ارجاع مجدد
-                  </button>
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-slate-100">
-                  <input
-                    type="text"
-                    value={responseTexts[task.id] || ''}
-                    onChange={(e) =>
-                      setResponseTexts((prev) => ({ ...prev, [task.id]: e.target.value }))
-                    }
-                    placeholder="ثبت نتیجه بررسی، شرح اقدام یا پاسخ کارشناسی..."
-                    className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
-                  />
-                  <button
-                    onClick={() => onCompleteTask(task.id, responseTexts[task.id])}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shrink-0"
-                  >
-                    <Check className="w-4 h-4" />
-                    <span>ثبت نتیجه و تکمیل اقدام</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SecretariatWorkflowView({ letters, onOpenLetter }) {
-  const referredLetters = letters.filter((l) => (l.referrals?.length || 0) > 0);
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div>
-        <h1 className="text-xl font-extrabold text-[#0f294a]">گردش مکاتبات و تاریخچه ارجاعات</h1>
-        <p className="text-xs text-slate-500 mt-1">
-          مشاهده مسیر حرکت نامه‌ها میان مدیریت، دبیرخانه و کارشناسان مرکز رشد
-        </p>
-      </div>
-
-      <div className="space-y-4">
-        {referredLetters.map((l) => (
-          <div key={l.id} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <span className="font-mono text-xs font-bold text-blue-800 bg-blue-50 px-2.5 py-1 rounded-lg">
-                  {toPersianDigits(l.indicatorNumber)}
-                </span>
-                <h3 className="font-bold text-sm text-slate-900">{l.subject}</h3>
-              </div>
-              <button
-                onClick={() => onOpenLetter(l.id)}
-                className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
-              >
-                ارجاع مجدد / جزئیات
-              </button>
-            </div>
-
-            <div className="space-y-2.5 pr-4 border-r-2 border-blue-200">
-              {l.referrals.map((ref) => (
-                <div key={ref.id} className="p-3 rounded-xl bg-slate-50 text-xs">
-                  <div className="flex flex-wrap justify-between gap-2 text-slate-500 mb-1">
-                    <span>
-                      از: <b className="text-slate-800">{ref.fromUser}</b> ⟵ به:{' '}
-                      <b className="text-blue-800">{ref.toName}</b> ({ref.referralType})
-                    </span>
-                    <span dir="ltr">{toPersianDigits(ref.date)}</span>
-                  </div>
-                  {ref.instructions && <p className="text-slate-700">دستور/هامش: {ref.instructions}</p>}
-                  {ref.response && (
-                    <p className="text-emerald-700 font-semibold mt-1">نتیجه اقدام: {ref.response}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SecretariatDraftsView({ drafts, onNewDraft, onEditDraft, onFinalizeDraft, onDeleteDraft }) {
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-extrabold text-[#0f294a]">پیش‌نویس‌های مکاتبات</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            نامه‌هایی که هنوز شماره اندیکاتور نهایی دریافت نکرده‌اند و قابل ویرایش هستند.
-          </p>
-        </div>
-        <button
-          onClick={onNewDraft}
-          className="px-4 py-2 rounded-xl bg-[#0f294a] text-white text-xs font-bold flex items-center gap-1.5"
-        >
-          <Plus className="w-4 h-4" />
-          <span>ایجاد پیش‌نویس جدید</span>
-        </button>
-      </div>
-
-      {drafts.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-sm text-slate-500">
-          پیش‌نویسی ذخیره نشده است.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {drafts.map((d) => (
-            <div key={d.id} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between text-xs mb-2">
-                  <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold">
-                    پیش‌نویس ({d.type === 'incoming' ? 'وارده' : 'صادره'})
-                  </span>
-                  <span className="text-slate-400">{toPersianDigits(d.letterDate)}</span>
-                </div>
-                <h3 className="font-bold text-slate-900 text-sm mb-1">{d.subject}</h3>
-                <p className="text-xs text-slate-500 mb-3">
-                  مخاطب: {d.recipientOrg || d.recipientName || 'تعیین نشده'}
-                </p>
-              </div>
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                <button
-                  onClick={() => onEditDraft(d)}
-                  className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold flex items-center gap-1"
-                >
-                  <Edit className="w-3.5 h-3.5" />
-                  ویرایش متن
-                </button>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => onFinalizeDraft(d)}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
-                  >
-                    تبدیل به نامه صادره و شماره‌گذاری
-                  </button>
-                  <button
-                    onClick={() => onDeleteDraft(d)}
-                    className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SecretariatIndicatorView({ ledger, settings, onOpenLetter }) {
-  const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('همه');
-
-  const filtered = ledger.filter((item) => {
-    const q = search.trim().toLowerCase();
-    const matchQ =
-      !q ||
-      (item.indicatorNumber && item.indicatorNumber.toLowerCase().includes(q)) ||
-      (item.subject && item.subject.toLowerCase().includes(q)) ||
-      (item.party && item.party.toLowerCase().includes(q));
-    const matchType = typeFilter === 'همه' || item.type === typeFilter;
-    return matchQ && matchType;
-  });
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-extrabold text-[#0f294a]">
-            دفتر اندیکاتور الکترونیکی (سال {toPersianDigits(settings.currentYear)})
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            ثبت تراکنشی و یکتا با حفظ شماره‌های استفاده‌شده حتی در صورت حذف نرم مکاتبات
-          </p>
-        </div>
-        <div className="flex items-center gap-3 text-xs bg-white px-4 py-2.5 rounded-xl border border-slate-200">
-          <span>شماره بعدی وارده: <b className="font-mono text-blue-700">{toPersianDigits(settings.nextIncomingSeq)}</b></span>
-          <span className="text-slate-300">|</span>
-          <span>شماره بعدی صادره: <b className="font-mono text-emerald-700">{toPersianDigits(settings.nextOutgoingSeq)}</b></span>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="جست‌وجو بر اساس شماره اندیکاتور، موضوع یا طرف مکاتبه..."
-            className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-300 text-xs"
-          />
-        </div>
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs bg-slate-50"
-        >
-          <option value="همه">همه انواع اندیکاتور</option>
-          <option value="وارده">نامه‌های وارده</option>
-          <option value="صادره">نامه‌های صادره</option>
-          <option value="داخلی">مکاتبات داخلی</option>
-        </select>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-right text-xs">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-              <tr>
-                <th className="py-3.5 px-4">شماره اندیکاتور</th>
-                <th className="py-3.5 px-4">نوع ثبت</th>
-                <th className="py-3.5 px-4">تاریخ و ساعت ثبت</th>
-                <th className="py-3.5 px-4">موضوع</th>
-                <th className="py-3.5 px-4">فرستنده / گیرنده</th>
-                <th className="py-3.5 px-4">کاربر ثبت‌کننده</th>
-                <th className="py-3.5 px-4">وضعیت سابقه</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.map((item) => (
-                <tr
-                  key={item.id}
-                  onClick={() => onOpenLetter(item.letterId)}
-                  className="hover:bg-blue-50/40 cursor-pointer"
-                >
-                  <td className="py-3.5 px-4 font-mono font-bold text-blue-900">
-                    {toPersianDigits(item.indicatorNumber)}
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span
-                      className={`px-2 py-0.5 rounded-full font-semibold ${
-                        item.type === 'وارده' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'
-                      }`}
-                    >
-                      {item.type}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-slate-600" dir="ltr">
-                    {toPersianDigits(item.registeredAt)}
-                  </td>
-                  <td className="py-3.5 px-4 font-semibold text-slate-800">{item.subject}</td>
-                  <td className="py-3.5 px-4 text-slate-600">{item.party}</td>
-                  <td className="py-3.5 px-4 text-slate-500">{item.registeredBy}</td>
-                  <td className="py-3.5 px-4">
-                    {item.isLetterDeleted ? (
-                      <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-semibold">
-                        شماره محفوظ (نامه در سطل حذف)
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold">
-                        فعال در پرونده
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SecretariatArchiveView({ archivedLetters, onOpenLetter, onExportWord }) {
-  const [search, setSearch] = useState('');
-  const filtered = archivedLetters.filter(
-    (l) =>
-      !search ||
-      (l.subject && l.subject.includes(search)) ||
-      (l.indicatorNumber && l.indicatorNumber.includes(search))
-  );
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div>
-        <h1 className="text-xl font-extrabold text-[#0f294a]">بایگانی راکد و مکاتبات مختومه</h1>
-        <p className="text-xs text-slate-500 mt-1">
-          نگهداری سوابق نامه‌های مختومه و بازیابی پرونده‌های بایگانی‌شده
-        </p>
-      </div>
-
-      <div className="bg-white rounded-2xl p-4 border border-slate-200">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="جست‌وجو در بایگانی بر اساس شماره اندیکاتور یا موضوع..."
-          className="w-full max-w-md px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
-        />
-      </div>
-
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-        <table className="w-full text-right text-xs">
-          <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-            <tr>
-              <th className="py-3.5 px-4">شماره اندیکاتور</th>
-              <th className="py-3.5 px-4">تاریخ</th>
-              <th className="py-3.5 px-4">موضوع</th>
-              <th className="py-3.5 px-4">طرف مکاتبه</th>
-              <th className="py-3.5 px-4 text-center">مشاهده / دریافت Word</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="py-10 text-center text-slate-400">
-                  پرونده‌ای در بایگانی ثبت نشده است.
-                </td>
-              </tr>
-            ) : (
-              filtered.map((l) => (
-                <tr key={l.id} className="hover:bg-slate-50">
-                  <td className="py-3.5 px-4 font-mono font-bold text-slate-800">
-                    {toPersianDigits(l.indicatorNumber)}
-                  </td>
-                  <td className="py-3.5 px-4">{toPersianDigits(l.letterDate)}</td>
-                  <td className="py-3.5 px-4 font-semibold">{l.subject}</td>
-                  <td className="py-3.5 px-4">{l.senderOrg || l.recipientOrg}</td>
-                  <td className="py-3.5 px-4 text-center">
-                    <div className="flex justify-center gap-2">
-                      <button
-                        onClick={() => onOpenLetter(l.id)}
-                        className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 font-semibold"
-                      >
-                        مشاهده سابقه
-                      </button>
-                      <button
-                        onClick={() => onExportWord(l)}
-                        className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-semibold"
-                      >
-                        Word
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function SecretariatTrashView({ deletedLetters, isSystemAdmin, onRestore, onPermanentDelete }) {
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div>
-        <h1 className="text-xl font-extrabold text-[#0f294a]">نامه‌های حذف‌شده (حذف نرم)</h1>
-        <p className="text-xs text-slate-500 mt-1">
-          شماره اندیکاتور نامه‌های حذف‌شده در دفتر اندیکاتور محفوظ می‌ماند. حذف دائمی فقط با مجوز «مدیر سیستم» امکان‌پذیر است.
-        </p>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-        <table className="w-full text-right text-xs">
-          <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-            <tr>
-              <th className="py-3.5 px-4">شماره اندیکاتور</th>
-              <th className="py-3.5 px-4">موضوع نامه</th>
-              <th className="py-3.5 px-4">کاربر حذف‌کننده</th>
-              <th className="py-3.5 px-4">زمان حذف</th>
-              <th className="py-3.5 px-4 text-center">عملیات</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {deletedLetters.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="py-10 text-center text-slate-400">
-                  موردی در بخش حذف‌شده‌ها وجود ندارد.
-                </td>
-              </tr>
-            ) : (
-              deletedLetters.map((l) => (
-                <tr key={l.id}>
-                  <td className="py-3.5 px-4 font-mono font-bold text-rose-700">
-                    {toPersianDigits(l.indicatorNumber || 'پیش‌نویس')}
-                  </td>
-                  <td className="py-3.5 px-4 font-semibold">{l.subject}</td>
-                  <td className="py-3.5 px-4">{l.deletedBy}</td>
-                  <td className="py-3.5 px-4" dir="ltr">
-                    {toPersianDigits(l.deletedAt)}
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <div className="flex justify-center gap-2">
-                      <button
-                        onClick={() => onRestore(l)}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold flex items-center gap-1"
-                      >
-                        <CornerUpLeft className="w-3.5 h-3.5" />
-                        بازیابی نامه
-                      </button>
-                      {isSystemAdmin && (
-                        <button
-                          onClick={() => onPermanentDelete(l)}
-                          className="px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 font-semibold"
-                        >
-                          حذف دائمی
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function SecretariatTemplatesView({ templates, onSaveTemplate, onDeleteTemplate, onUseTemplate }) {
-  const [editingTpl, setEditingTpl] = useState(null);
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-extrabold text-[#0f294a]">قالب‌های آماده مکاتبات اداری</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            مدیریت الگوهای استاندارد با متغیرهای پویا ({'{{گیرنده}}'}, {'{{موضوع}}'}, {'{{تاریخ}}'})
-          </p>
-        </div>
-        <button
-          onClick={() =>
-            setEditingTpl({
-              id: '',
-              title: '',
-              category: 'عمومی',
-              subjectTemplate: '',
-              bodyTemplate: 'با سلام و احترام؛\n\n',
-              signerName: 'دکتر حمیدرضا رضایی',
-              signerTitle: 'رئیس مرکز رشد فناوری نخبگان'
-            })
-          }
-          className="px-4 py-2 rounded-xl bg-[#0f294a] text-white text-xs font-bold flex items-center gap-1.5"
-        >
-          <Plus className="w-4 h-4" />
-          <span>تعریف قالب جدید</span>
-        </button>
-      </div>
-
-      {editingTpl && (
-        <div className="bg-white rounded-2xl p-6 border border-blue-200 shadow-md space-y-4">
-          <h3 className="font-bold text-sm text-slate-900">ویرایش / ایجاد قالب نامه</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold mb-1">عنوان قالب</label>
-              <input
-                type="text"
-                value={editingTpl.title}
-                onChange={(e) => setEditingTpl({ ...editingTpl, title: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">دسته‌بندی</label>
-              <input
-                type="text"
-                value={editingTpl.category}
-                onChange={(e) => setEditingTpl({ ...editingTpl, category: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-xs font-semibold mb-1">الگوی موضوع نامه</label>
-              <input
-                type="text"
-                value={editingTpl.subjectTemplate}
-                onChange={(e) => setEditingTpl({ ...editingTpl, subjectTemplate: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-xs font-semibold mb-1">متن پیش‌فرض نامه</label>
-              <textarea
-                rows={5}
-                value={editingTpl.bodyTemplate}
-                onChange={(e) => setEditingTpl({ ...editingTpl, bodyTemplate: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={() => setEditingTpl(null)}
-              className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold"
-            >
-              انصراف
-            </button>
-            <button
-              onClick={() => {
-                if (!editingTpl.title) return;
-                onSaveTemplate(editingTpl);
-                setEditingTpl(null);
-              }}
-              className="px-5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold"
-            >
-              ذخیره قالب
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {templates.map((tpl) => (
-          <div key={tpl.id} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800">
-                  {tpl.category}
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setEditingTpl(tpl)}
-                    className="p-1.5 text-slate-500 hover:text-amber-600"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => onDeleteTemplate(tpl.id)}
-                    className="p-1.5 text-slate-500 hover:text-rose-600"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-              <h3 className="font-bold text-slate-900 text-sm mb-2">{tpl.title}</h3>
-              <p className="text-xs text-slate-600 whitespace-pre-line line-clamp-4 bg-slate-50 p-3 rounded-xl">
-                {tpl.bodyTemplate}
-              </p>
-            </div>
-            <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
-              <button
-                onClick={() => onUseTemplate(tpl)}
-                className="px-4 py-2 rounded-xl bg-[#0f294a] hover:bg-blue-800 text-white text-xs font-semibold"
-              >
-                استفاده از این قالب در ثبت نامه جدید
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SecretariatReportsView({ letters, onOpenLetter, showToast }) {
-  const [filters, setFilters] = useState({
-    indicator: '',
-    originNumber: '',
-    date: '',
-    subject: '',
-    party: '',
-    bodyText: '',
-    status: 'همه',
-    type: 'همه'
-  });
-
-  const results = useMemo(() => {
-    return letters.filter((l) => {
-      if (filters.indicator && !String(l.indicatorNumber || '').includes(filters.indicator)) return false;
-      if (filters.originNumber && !String(l.originLetterNumber || '').includes(filters.originNumber)) return false;
-      if (filters.date && !String(l.letterDate || '').includes(filters.date)) return false;
-      if (filters.subject && !String(l.subject || '').includes(filters.subject)) return false;
-      if (
-        filters.party &&
-        !`${l.senderName} ${l.senderOrg} ${l.recipientName} ${l.recipientOrg}`.includes(filters.party)
-      )
-        return false;
-      if (filters.bodyText && !String(l.body || '').includes(filters.bodyText)) return false;
-      if (filters.status !== 'همه' && l.status !== filters.status) return false;
-      if (filters.type !== 'همه' && l.type !== filters.type) return false;
-      return true;
-    });
-  }, [letters, filters]);
-
-  const handleExportReportExcel = () => {
-    if (!window.XLSX) {
-      showToast('کتابخانه اکسل در حال بارگذاری است، لطفاً چند ثانیه صبر کنید.', 'error');
-      return;
-    }
-    const rows = results.map((l) => ({
-      'شماره اندیکاتور': l.indicatorNumber || 'پیش‌نویس',
-      'نوع مکاتبه': l.type === 'incoming' ? 'وارده' : l.type === 'outgoing' ? 'صادره' : 'داخلی',
-      'تاریخ نامه': l.letterDate,
-      'موضوع': l.subject,
-      'فرستنده': `${l.senderName || ''} (${l.senderOrg || ''})`,
-      'گیرنده': `${l.recipientName || ''} (${l.recipientOrg || ''})`,
-      'شماره نامه مبدأ': l.originLetterNumber || '',
-      'وضعیت': l.status,
-      'فوریت': l.priority,
-      'محرمانگی': l.confidentiality,
-      'کارشناس / مسئول': l.assignedToName || ''
-    }));
-    const ws = window.XLSX.utils.json_to_sheet(rows);
-    const wb = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(wb, ws, 'گزارش مکاتبات');
-    window.XLSX.writeFile(wb, `Secretariat_Report_${getTodayJalali().replace(/\//g, '-')}.xlsx`);
-    showToast('گزارش اکسل مکاتبات دانلود شد.');
-  };
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 no-print">
-        <div>
-          <h1 className="text-xl font-extrabold text-[#0f294a]">جست‌وجوی جامع و گزارش‌ساز دبیرخانه</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            جست‌وجوی ترکیبی در تمام مکاتبات و دریافت خروجی Excel و PDF
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleExportReportExcel}
-            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5"
-          >
-            <Download className="w-4 h-4" />
-            <span>خروجی Excel ({toPersianDigits(results.length)})</span>
-          </button>
-          <button
-            onClick={() => window.print()}
-            className="px-4 py-2 rounded-xl bg-[#0f294a] hover:bg-blue-800 text-white text-xs font-bold flex items-center gap-1.5"
-          >
-            <Printer className="w-4 h-4" />
-            <span>چاپ / خروجی PDF</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs no-print">
-        <input
-          type="text"
-          placeholder="شماره اندیکاتور..."
-          value={filters.indicator}
-          onChange={(e) => setFilters({ ...filters, indicator: e.target.value })}
-          className="px-3 py-2 rounded-xl border border-slate-300"
-        />
-        <input
-          type="text"
-          placeholder="شماره نامه مبدأ..."
-          value={filters.originNumber}
-          onChange={(e) => setFilters({ ...filters, originNumber: e.target.value })}
-          className="px-3 py-2 rounded-xl border border-slate-300"
-        />
-        <input
-          type="text"
-          placeholder="تاریخ (مثلاً 1405/01)..."
-          value={filters.date}
-          onChange={(e) => setFilters({ ...filters, date: e.target.value })}
-          className="px-3 py-2 rounded-xl border border-slate-300"
-        />
-        <input
-          type="text"
-          placeholder="موضوع نامه..."
-          value={filters.subject}
-          onChange={(e) => setFilters({ ...filters, subject: e.target.value })}
-          className="px-3 py-2 rounded-xl border border-slate-300"
-        />
-        <input
-          type="text"
-          placeholder="فرستنده، گیرنده یا نام شرکت..."
-          value={filters.party}
-          onChange={(e) => setFilters({ ...filters, party: e.target.value })}
-          className="px-3 py-2 rounded-xl border border-slate-300"
-        />
-        <input
-          type="text"
-          placeholder="جست‌وجو در متن نامه..."
-          value={filters.bodyText}
-          onChange={(e) => setFilters({ ...filters, bodyText: e.target.value })}
-          className="px-3 py-2 rounded-xl border border-slate-300"
-        />
-        <select
-          value={filters.type}
-          onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-          className="px-3 py-2 rounded-xl border border-slate-300 bg-white"
-        >
-          <option value="همه">نوع مکاتبه: همه</option>
-          <option value="incoming">وارده</option>
-          <option value="outgoing">صادره</option>
-          <option value="internal">داخلی</option>
-        </select>
-        <select
-          value={filters.status}
-          onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-          className="px-3 py-2 rounded-xl border border-slate-300 bg-white"
-        >
-          <option value="همه">وضعیت نامه: همه</option>
-          {INCOMING_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-          <option value="ارسال‌شده">ارسال‌شده</option>
-        </select>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-right text-xs">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-              <tr>
-                <th className="py-3 px-4">اندیکاتور</th>
-                <th className="py-3 px-4">نوع</th>
-                <th className="py-3 px-4">تاریخ</th>
-                <th className="py-3 px-4">موضوع</th>
-                <th className="py-3 px-4">طرف مکاتبه</th>
-                <th className="py-3 px-4">مسئول پیگیری</th>
-                <th className="py-3 px-4">وضعیت</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {results.map((l) => (
-                <tr
-                  key={l.id}
-                  onClick={() => onOpenLetter(l.id)}
-                  className="hover:bg-blue-50/40 cursor-pointer"
-                >
-                  <td className="py-3 px-4 font-mono font-bold text-blue-800">
-                    {toPersianDigits(l.indicatorNumber || 'پیش‌نویس')}
-                  </td>
-                  <td className="py-3 px-4">{l.type === 'incoming' ? 'وارده' : 'صادره'}</td>
-                  <td className="py-3 px-4">{toPersianDigits(l.letterDate)}</td>
-                  <td className="py-3 px-4 font-semibold">{l.subject}</td>
-                  <td className="py-3 px-4">{l.senderOrg || l.recipientOrg}</td>
-                  <td className="py-3 px-4 text-slate-500">{l.assignedToName}</td>
-                  <td className="py-3 px-4">{l.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SecretariatSettingsView({ secretariat, setSecretariat, isSystemAdmin, showToast }) {
-  const [formSettings, setFormSettings] = useState(secretariat.settings);
-
-  const handleSave = (e) => {
-    e.preventDefault();
-    if (!isSystemAdmin) {
-      showToast('فقط مدیر سیستم مجوز تغییر الگوی شماره‌گذاری را دارد.', 'error');
-      return;
-    }
-    setSecretariat((prev) => ({ ...prev, settings: formSettings }));
-    showToast('تنظیمات شماره‌گذاری و سربرگ دبیرخانه ذخیره شد.');
-  };
-
-  const handleBackupSecretariat = () => {
-    const blob = new Blob([JSON.stringify(secretariat, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `secretariat-backup-${getTodayJalali().replace(/\//g, '-')}.json`;
-    a.click();
-    showToast('نسخه پشتیبان کامل دبیرخانه دانلود شد.');
-  };
-
-  return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div>
-        <h1 className="text-xl font-extrabold text-[#0f294a]">تنظیمات دبیرخانه و الگوی اندیکاتور</h1>
-        <p className="text-xs text-slate-500 mt-1">
-          پیکربندی سال شمسی، الگوی شماره‌دهی خودکار، سربرگ رسمی و پشتیبان‌گیری
-        </p>
-      </div>
-
-      <form onSubmit={handleSave} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">سال شمسی فعال اندیکاتور</label>
-            <input
-              type="text"
-              value={formSettings.currentYear}
-              onChange={(e) => setFormSettings({ ...formSettings, currentYear: e.target.value })}
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-300"
-            />
-          </div>
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">الگوی شماره نامه‌های وارده</label>
-            <input
-              type="text"
-              dir="ltr"
-              value={formSettings.incomingPattern}
-              onChange={(e) => setFormSettings({ ...formSettings, incomingPattern: e.target.value })}
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-300"
-            />
-          </div>
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">الگوی شماره نامه‌های صادره</label>
-            <input
-              type="text"
-              dir="ltr"
-              value={formSettings.outgoingPattern}
-              onChange={(e) => setFormSettings({ ...formSettings, outgoingPattern: e.target.value })}
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-300"
-            />
-          </div>
-          <div className="md:col-span-3">
-            <label className="block font-bold text-slate-700 mb-1">عنوان سطر اول سربرگ رسمی</label>
-            <input
-              type="text"
-              value={formSettings.orgHeaderTitle}
-              onChange={(e) => setFormSettings({ ...formSettings, orgHeaderTitle: e.target.value })}
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-300"
-            />
-          </div>
-          <div className="md:col-span-3">
-            <label className="block font-bold text-slate-700 mb-1">عنوان سطر دوم سربرگ رسمی</label>
-            <input
-              type="text"
-              value={formSettings.orgSubTitle}
-              onChange={(e) => setFormSettings({ ...formSettings, orgSubTitle: e.target.value })}
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-300"
-            />
-          </div>
-        </div>
-
-        <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={handleBackupSecretariat}
-            className="px-4 py-2 rounded-xl bg-blue-50 text-blue-800 border border-blue-200 text-xs font-bold flex items-center gap-1.5"
-          >
-            <Download className="w-4 h-4" />
-            <span>تهیه نسخه پشتیبان دبیرخانه (JSON)</span>
-          </button>
-
-          <button
-            type="submit"
-            className="px-5 py-2.5 rounded-xl bg-[#0f294a] hover:bg-blue-800 text-white text-xs font-bold"
-          >
-            ذخیره تنظیمات
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-// ============================================================================
-// ۶. مودال مشاهده نامه رسمی، گردش ارجاعات و بارگذاری نسخه ویرایش‌شده Word
-// ============================================================================
-function LetterDetailModal({
-  letter,
-  orgSettings,
-  onClose,
-  onRefer,
-  onUpdateStatus,
-  onExportWord,
-  onUploadNewWordVersion
-}) {
-  const [activeSubTab, setActiveSubTab] = useState('paper');
-  const [selectedTargets, setSelectedTargets] = useState(['expert']);
-  const [referralType, setReferralType] = useState('جهت اقدام');
-  const [deadline, setDeadline] = useState('');
-  const [instructions, setInstructions] = useState('');
-
-  const toggleTarget = (roleId) => {
-    setSelectedTargets((prev) =>
-      prev.includes(roleId) ? prev.filter((r) => r !== roleId) : [...prev, roleId]
-    );
-  };
-
-  const handleSendReferral = (e) => {
-    e.preventDefault();
-    if (selectedTargets.length === 0) return;
-    const targets = selectedTargets.map((id) => {
-      const roleObj = SECRETARIAT_ROLES.find((r) => r.id === id);
-      return { roleId: id, label: roleObj?.userDisplayName || id };
-    });
-    onRefer({ targets, referralType, deadline, instructions });
-    setInstructions('');
-  };
-
-  const handleWordReupload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      onUploadNewWordVersion({
-        id: 'att-' + Date.now(),
-        name: file.name,
-        size: `${Math.max(1, Math.round(file.size / 1024))} KB`,
-        type: file.type,
-        dataUrl: reader.result,
-        date: getTodayJalali()
-      });
-    };
-    reader.readAsDataURL(file);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto">
-        <div className="p-4 sm:p-5 bg-[#0b1f3a] text-white flex flex-wrap items-center justify-between gap-3 no-print">
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-xs bg-blue-600 px-3 py-1 rounded-lg font-bold">
-              {toPersianDigits(letter.indicatorNumber || 'پیش‌نویس')}
-            </span>
-            <h3 className="font-bold text-sm sm:text-base line-clamp-1">{letter.subject}</h3>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onExportWord}
-              className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold flex items-center gap-1.5"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>دانلود Word (.docx)</span>
-            </button>
-            <button
-              onClick={() => window.print()}
-              className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-semibold flex items-center gap-1.5"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>چاپ / PDF</span>
-            </button>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-300">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex border-b border-slate-200 bg-slate-50 px-5 pt-2 gap-2 no-print">
-          {[
-            { id: 'paper', label: 'متن و سربرگ رسمی نامه' },
-            { id: 'workflow', label: `ارجاع و گردش کار (${toPersianDigits(letter.referrals?.length || 0)})` },
-            { id: 'versions', label: `نسخه‌های Word و پیوست‌ها (${toPersianDigits(letter.versions?.length || 0)})` }
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setActiveSubTab(t.id)}
-              className={`px-4 py-2 rounded-t-xl text-xs font-bold ${
-                activeSubTab === t.id
-                  ? 'bg-white text-blue-800 border-t border-x border-slate-200'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="p-5 sm:p-6 max-h-[75vh] overflow-y-auto">
-          {activeSubTab === 'paper' && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs no-print">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500">تغییر وضعیت نامه:</span>
-                  <select
-                    value={letter.status}
-                    onChange={(e) => onUpdateStatus(e.target.value)}
-                    className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-slate-800"
-                  >
-                    {INCOMING_STATUSES.map((st) => (
-                      <option key={st} value={st}>
-                        {st}
-                      </option>
-                    ))}
-                    <option value="ارسال‌شده">ارسال‌شده</option>
-                  </select>
-                </div>
-                <span className="text-slate-500">
-                  مسئول فعلی: <b>{letter.assignedToName}</b>
-                </span>
-              </div>
-
-              <OfficialLetterPaper letter={letter} settings={orgSettings} />
-            </div>
-          )}
-
-          {activeSubTab === 'workflow' && (
-            <div className="space-y-6">
-              <form onSubmit={handleSendReferral} className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-4 text-xs">
-                <h4 className="font-bold text-blue-950 text-sm">ارجاع نامه به اشخاص یا واحدهای سازمانی</h4>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1.5">
-                    انتخاب گیرندگان ارجاع (امکان انتخاب هم‌زمان چند نفر):
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {SECRETARIAT_ROLES.map((r) => (
-                      <button
-                        key={r.id}
-                        type="button"
-                        onClick={() => toggleTarget(r.id)}
-                        className={`px-3 py-1.5 rounded-xl border font-semibold transition-all ${
-                          selectedTargets.includes(r.id)
-                            ? 'bg-[#0f294a] text-white border-[#0f294a]'
-                            : 'bg-white text-slate-700 border-slate-300'
-                        }`}
-                      >
-                        {r.userDisplayName}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">نوع ارجاع</label>
-                    <select
-                      value={referralType}
-                      onChange={(e) => setReferralType(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                    >
-                      {REFERRAL_TYPES.map((rt) => (
-                        <option key={rt} value={rt}>
-                          {rt}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">مهلت اقدام (شمسی)</label>
-                    <input
-                      type="text"
-                      dir="ltr"
-                      placeholder="1405/02/05"
-                      value={deadline}
-                      onChange={(e) => setDeadline(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">توضیحات و هامش ارجاع</label>
-                  <input
-                    type="text"
-                    value={instructions}
-                    onChange={(e) => setInstructions(e.target.value)}
-                    placeholder="دستورالعمل بررسی یا تهیه پاسخ را بنویسید..."
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                  />
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold"
-                  >
-                    ثبت و ارسال ارجاع
-                  </button>
-                </div>
-              </form>
-
-              <div className="space-y-2.5">
-                <h4 className="font-bold text-xs text-slate-700">سوابق گردش و ارجاعات قبلی:</h4>
-                {(letter.referrals || []).length === 0 ? (
-                  <p className="text-xs text-slate-400">هنوز ارجاعی ثبت نشده است.</p>
-                ) : (
-                  letter.referrals.map((ref) => (
-                    <div key={ref.id} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                      <div className="flex justify-between text-slate-500 mb-1">
-                        <span>
-                          <b>{ref.fromUser}</b> ⟵ <b>{ref.toName}</b> ({ref.referralType})
-                        </span>
-                        <span dir="ltr">{toPersianDigits(ref.date)}</span>
-                      </div>
-                      <p className="text-slate-800">{ref.instructions}</p>
-                      {ref.response && (
-                        <p className="text-emerald-700 font-bold mt-1">پاسخ: {ref.response}</p>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeSubTab === 'versions' && (
-            <div className="space-y-5 text-xs">
-              <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h4 className="font-bold text-indigo-950 text-sm">
-                    ویرایش در Microsoft Word و بارگذاری نسخه نهایی
-                  </h4>
-                  <p className="text-indigo-800 mt-0.5">
-                    می‌توانید فایل DOCX را دانلود کرده، در Word ویرایش کنید و نسخه نهایی را مجدداً اینجا بارگذاری نمایید.
-                  </p>
-                </div>
-                <label className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer flex items-center gap-1.5">
-                  <Upload className="w-4 h-4" />
-                  <span>بارگذاری نسخه نهایی Word</span>
-                  <input
-                    type="file"
-                    accept=".doc,.docx,.pdf"
-                    onChange={handleWordReupload}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-
-              <div>
-                <h4 className="font-bold text-slate-800 mb-2">تاریخچه نسخه‌های نامه:</h4>
-                <div className="space-y-2">
-                  {(letter.versions || []).map((v, i) => (
-                    <div key={i} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex justify-between">
-                      <span>
-                        <b>نسخه {toPersianDigits(v.version)}:</b> {v.note} ({v.user})
-                      </span>
-                      <span dir="ltr" className="text-slate-400">
-                        {toPersianDigits(v.date)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {(letter.attachments || []).length > 0 && (
-                <div>
-                  <h4 className="font-bold text-slate-800 mb-2">فایل‌های پیوست و نسخه‌های بارگذاری‌شده:</h4>
-                  <div className="space-y-2">
-                    {letter.attachments.map((att) => (
-                      <div
-                        key={att.id}
-                        className="p-3 rounded-xl bg-white border border-slate-200 flex items-center justify-between"
-                      >
-                        <span className="font-bold text-slate-800">{att.name}</span>
-                        <div className="flex items-center gap-3">
-                          <span className="text-slate-400">{att.size}</span>
-                          {att.dataUrl && (
-                            <a
-                              href={att.dataUrl}
-                              download={att.name}
-                              className="text-blue-600 font-bold hover:underline"
-                            >
-                              دانلود فایل
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function OfficialLetterPaper({ letter, settings }) {
-  return (
-    <div className="bg-white border border-slate-300 rounded-xl p-8 sm:p-12 shadow-sm max-w-3xl mx-auto text-slate-900">
-      <div className="text-center border-b-2 border-[#0f294a] pb-4 mb-6">
-        <p className="text-xs font-bold mb-1">بسمه تعالی</p>
-        <h3 className="text-sm font-extrabold text-[#0f294a]">
-          {settings?.orgHeaderTitle || 'معاونت علمی، فناوری و اقتصاد دانش‌بنیان ریاست جمهوری'}
-        </h3>
-        <p className="text-xs font-bold text-blue-700 mt-0.5">
-          {settings?.orgSubTitle || 'پارک فناوری پردیس — مرکز رشد فناوری نخبگان'}
-        </p>
-      </div>
-
-      <div className="flex justify-between items-start text-xs mb-8">
-        <div className="space-y-1">
-          <p>
-            <span className="text-slate-500">طبقه‌بندی: </span>
-            <b>{letter.confidentiality || 'عادی'}</b>
-          </p>
-          <p>
-            <span className="text-slate-500">فوریت: </span>
-            <b>{letter.priority || 'عادی'}</b>
-          </p>
-        </div>
-        <div className="space-y-1 text-left">
-          <p>
-            <span className="text-slate-500">شماره نامه: </span>
-            <b className="font-mono">{toPersianDigits(letter.indicatorNumber || 'پیش‌نویس')}</b>
-          </p>
-          <p>
-            <span className="text-slate-500">تاریخ: </span>
-            <b>{toPersianDigits(letter.letterDate)}</b>
-          </p>
-          <p>
-            <span className="text-slate-500">پیوست: </span>
-            <b>{letter.attachments?.length ? `${toPersianDigits(letter.attachments.length)} فقره` : 'ندارد'}</b>
-          </p>
-        </div>
-      </div>
-
-      <div className="space-y-2 text-sm font-bold mb-6">
-        <p>
-          {letter.type === 'incoming'
-            ? `فرستنده: ${letter.senderName || ''} (${letter.senderOrg || ''})`
-            : `گیرنده محترم: ${letter.recipientName || ''} ${letter.recipientOrg ? `(${letter.recipientOrg})` : ''}`}
-        </p>
-        <p>موضوع: {letter.subject}</p>
-      </div>
-
-      <div className="text-sm leading-8 whitespace-pre-line text-justify min-h-[180px] mb-10">
-        {letter.body}
-      </div>
-
-      <div className="flex justify-end mb-8">
-        <div className="text-center text-sm">
-          <p className="font-extrabold">{letter.signerName || 'دکتر حمیدرضا رضایی'}</p>
-          <p className="text-xs text-slate-600 mt-1">{letter.signerTitle || 'رئیس مرکز رشد فناوری نخبگان'}</p>
-        </div>
-      </div>
-
-      {letter.ccList && letter.ccList.length > 0 && (
-        <div className="border-t border-slate-200 pt-3 text-xs text-slate-600">
-          <p className="font-bold mb-1">رونوشت:</p>
-          <ul className="list-disc pr-5 space-y-0.5">
-            {letter.ccList.map((cc, i) => (
-              <li key={i}>{cc}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================================================
-// ۷. کامپوننت‌های پورتال و مدیریت شرکت‌ها
-// ============================================================================
-function PublicDirectoryView({ companies, stats, onSelectCompany }) {
-  const [searchQuery, setSearchQuery] = useState('');
+function PublicDirectoryView({ companies, stats, initialSearch = '', onSelectCompany }) {
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [selectedField, setSelectedField] = useState('همه');
   const [selectedLevel, setSelectedLevel] = useState('همه');
   const [selectedStatus, setSelectedStatus] = useState('همه');
   const [selectedKB, setSelectedKB] = useState('همه');
-  const [selectedType, setSelectedType] = useState('همه');
-  const [selectedLocation, setSelectedLocation] = useState('همه');
-  const [sortBy, setSortBy] = useState('newest');
   const [showFilters, setShowFilters] = useState(false);
 
+  useEffect(() => {
+    if (initialSearch) setSearchQuery(initialSearch);
+  }, [initialSearch]);
+
   const publicCompanies = useMemo(() => companies.filter((c) => c.isPublic), [companies]);
-
-  const filterOptions = useMemo(() => {
-    return {
-      fields: ['همه', ...new Set(publicCompanies.map((c) => c.field).filter(Boolean))],
-      levels: ['همه', ...new Set(publicCompanies.map((c) => c.level).filter(Boolean))],
-      statuses: ['همه', ...new Set(publicCompanies.map((c) => c.status).filter(Boolean))],
-      kbs: ['همه', 'دانش‌بنیان', 'غیر دانش‌بنیان'],
-      types: ['همه', ...new Set(publicCompanies.map((c) => c.companyType).filter(Boolean))],
-      locations: ['همه', ...new Set(publicCompanies.map((c) => c.locationStatus).filter(Boolean))]
-    };
-  }, [publicCompanies]);
-
   const featuredCompanies = useMemo(() => publicCompanies.filter((c) => c.isFeatured), [publicCompanies]);
 
+  const filterOptions = useMemo(
+    () => ({
+      fields: ['همه', ...new Set(publicCompanies.map((c) => c.field).filter(Boolean))],
+      levels: ['همه', ...new Set(publicCompanies.map((c) => c.level).filter(Boolean))],
+      statuses: ['همه', ...new Set(publicCompanies.map((c) => c.status).filter(Boolean))]
+    }),
+    [publicCompanies]
+  );
+
   const filteredCompanies = useMemo(() => {
-    return publicCompanies
-      .filter((c) => {
-        const q = searchQuery.trim().toLowerCase();
-        const matchesSearch =
-          !q ||
-          (c.name && c.name.toLowerCase().includes(q)) ||
-          (c.field && c.field.toLowerCase().includes(q)) ||
-          (c.shortDesc && c.shortDesc.toLowerCase().includes(q)) ||
-          (c.products && c.products.some((p) => p.name && p.name.toLowerCase().includes(q)));
-
-        const matchesField = selectedField === 'همه' || c.field === selectedField;
-        const matchesLevel = selectedLevel === 'همه' || c.level === selectedLevel;
-        const matchesStatus = selectedStatus === 'همه' || c.status === selectedStatus;
-        const matchesType = selectedType === 'همه' || c.companyType === selectedType;
-        const matchesLocation = selectedLocation === 'همه' || c.locationStatus === selectedLocation;
-
-        const isKB = c.knowledgeBased && c.knowledgeBased.includes('دانش‌بنیان') && !c.knowledgeBased.includes('خیر');
-        const matchesKB =
-          selectedKB === 'همه' ||
-          (selectedKB === 'دانش‌بنیان' && isKB) ||
-          (selectedKB === 'غیر دانش‌بنیان' && !isKB);
-
-        return (
-          matchesSearch &&
-          matchesField &&
-          matchesLevel &&
-          matchesStatus &&
-          matchesKB &&
-          matchesType &&
-          matchesLocation
-        );
-      })
-      .sort((a, b) => {
-        if (sortBy === 'name') return (a.name || '').localeCompare(b.name || '', 'fa');
-        if (sortBy === 'staff') return (Number(b.totalStaff) || 0) - (Number(a.totalStaff) || 0);
-        if (sortBy === 'products') return (Number(b.productCount) || 0) - (Number(a.productCount) || 0);
-        return 0;
-      });
-  }, [
-    publicCompanies,
-    searchQuery,
-    selectedField,
-    selectedLevel,
-    selectedStatus,
-    selectedKB,
-    selectedType,
-    selectedLocation,
-    sortBy
-  ]);
-
-  const resetFilters = () => {
-    setSearchQuery('');
-    setSelectedField('همه');
-    setSelectedLevel('همه');
-    setSelectedStatus('همه');
-    setSelectedKB('همه');
-    setSelectedType('همه');
-    setSelectedLocation('همه');
-  };
+    return publicCompanies.filter((c) => {
+      const q = searchQuery.trim().toLowerCase();
+      const matchesSearch =
+        !q ||
+        (c.name && c.name.toLowerCase().includes(q)) ||
+        (c.field && c.field.toLowerCase().includes(q)) ||
+        (c.shortDesc && c.shortDesc.toLowerCase().includes(q));
+      const matchesField = selectedField === 'همه' || c.field === selectedField;
+      const matchesLevel = selectedLevel === 'همه' || c.level === selectedLevel;
+      const matchesStatus = selectedStatus === 'همه' || c.status === selectedStatus;
+      const isKB = c.knowledgeBased && c.knowledgeBased.includes('دانش‌بنیان') && !c.knowledgeBased.includes('خیر');
+      const matchesKB =
+        selectedKB === 'همه' ||
+        (selectedKB === 'دانش‌بنیان' && isKB) ||
+        (selectedKB === 'غیر دانش‌بنیان' && !isKB);
+      return matchesSearch && matchesField && matchesLevel && matchesStatus && matchesKB;
+    });
+  }, [publicCompanies, searchQuery, selectedField, selectedLevel, selectedStatus, selectedKB]);
 
   return (
     <div>
+      {/* بنر معرفی مرکز رشد */}
       <section className="bg-gradient-to-bl from-[#0b1f3a] via-[#102c54] to-[#1e40af] text-white py-12 sm:py-16 border-b border-blue-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl">
@@ -5718,7 +2367,8 @@ function PublicDirectoryView({ companies, stats, onSelectCompany }) {
         </div>
       </section>
 
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-10">
+      {/* آمار تجمیعی */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-7 relative z-10">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
           {[
             { label: 'کل شرکت‌ها و هسته‌ها', value: stats.publicTotal, icon: Building2, color: 'text-blue-700 bg-blue-50' },
@@ -5734,7 +2384,7 @@ function PublicDirectoryView({ companies, stats, onSelectCompany }) {
             >
               <div className="flex items-center justify-between mb-2">
                 <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${item.color}`}>
-                  <item.icon className="w-4 h-4" />
+                  <item.icon className="w-5 h-5" />
                 </div>
                 <span className="text-2xl font-extrabold text-slate-900">{toPersianDigits(item.value)}</span>
               </div>
@@ -5744,6 +2394,7 @@ function PublicDirectoryView({ companies, stats, onSelectCompany }) {
         </div>
       </section>
 
+      {/* شرکت‌های منتخب */}
       {featuredCompanies.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10">
           <div className="flex items-center gap-2.5 mb-4">
@@ -5757,7 +2408,7 @@ function PublicDirectoryView({ companies, stats, onSelectCompany }) {
               <div
                 key={company.id}
                 onClick={() => onSelectCompany(company)}
-                className="bg-gradient-to-b from-white to-blue-50/40 rounded-2xl p-5 border border-blue-200/80 shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-gradient-to-b from-white to-blue-50/40 rounded-2xl p-5 border border-blue-200/80 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between"
               >
                 <div>
                   <div className="flex items-center gap-3 mb-3">
@@ -5766,9 +2417,7 @@ function PublicDirectoryView({ companies, stats, onSelectCompany }) {
                       <span className="inline-block text-[11px] font-semibold text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-md mb-1">
                         {company.field}
                       </span>
-                      <h4 className="font-bold text-slate-900 group-hover:text-blue-700 line-clamp-1">
-                        {company.name}
-                      </h4>
+                      <h4 className="font-bold text-slate-900 line-clamp-1">{company.name}</h4>
                     </div>
                   </div>
                   <p className="text-xs text-slate-600 leading-6 line-clamp-2 mb-3">{company.shortDesc}</p>
@@ -5786,151 +2435,346 @@ function PublicDirectoryView({ companies, stats, onSelectCompany }) {
         </section>
       )}
 
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10">
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 mb-6">
+      {/* جست‌وجو و فهرست جامع */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10 pb-12">
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 mb-6">
           <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
             <div className="relative flex-1">
-              <Search className="w-5 h-5 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="جست‌وجو بر اساس نام شرکت، محصول یا حوزه فناوری..."
-                className="w-full pr-11 pl-4 py-2.5 rounded-xl border border-slate-300 focus:border-blue-600 outline-none text-sm"
+                placeholder="جست‌وجو بر اساس نام شرکت یا حوزه فناوری..."
+                className="w-full pr-10 pl-4 py-2 rounded-xl border border-slate-300 text-sm outline-none focus:border-blue-600"
               />
             </div>
-
-            <div className="flex items-center gap-2.5">
-              <button
-                onClick={() => setShowFilters(!showFilters)}
-                className="px-4 py-2.5 rounded-xl border border-slate-300 text-sm font-medium flex items-center gap-2 hover:bg-slate-50"
-              >
-                <SlidersHorizontal className="w-4 h-4" />
-                <span>فیلترهای پیشرفته</span>
-              </button>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm bg-white"
-              >
-                <option value="newest">مرتب‌سازی: پیش‌فرض</option>
-                <option value="name">بر اساس حروف الفبا</option>
-                <option value="staff">بیشترین نیروی انسانی</option>
-                <option value="products">بیشترین تعداد محصول</option>
-              </select>
-            </div>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="px-4 py-2 rounded-xl border border-slate-300 text-sm font-medium flex items-center gap-2 hover:bg-slate-50"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              <span>فیلترهای پیشرفته</span>
+            </button>
           </div>
 
           {showFilters && (
-            <div className="mt-4 pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {[
-                { label: 'حوزه فعالیت', val: selectedField, set: setSelectedField, opts: filterOptions.fields },
-                { label: 'سطح‌بندی شرکت', val: selectedLevel, set: setSelectedLevel, opts: filterOptions.levels },
-                { label: 'وضعیت عضویت', val: selectedStatus, set: setSelectedStatus, opts: filterOptions.statuses },
-                { label: 'دانش‌بنیان بودن', val: selectedKB, set: setSelectedKB, opts: filterOptions.kbs },
-                { label: 'نوع شرکت', val: selectedType, set: setSelectedType, opts: filterOptions.types },
-                { label: 'وضعیت استقرار', val: selectedLocation, set: setSelectedLocation, opts: filterOptions.locations }
-              ].map((f, i) => (
-                <div key={i}>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">{f.label}</label>
-                  <select
-                    value={f.val}
-                    onChange={(e) => f.set(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-slate-50"
-                  >
-                    {f.opts.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-              <div className="sm:col-span-2 lg:col-span-3 flex justify-end">
-                <button onClick={resetFilters} className="text-xs text-rose-600 font-medium flex items-center gap-1">
-                  <X className="w-3.5 h-3.5" />
-                  پاک کردن همه فیلترها
-                </button>
-              </div>
+            <div className="mt-4 pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              <select value={selectedField} onChange={(e) => setSelectedField(e.target.value)} className="px-3 py-2 rounded-lg border border-slate-300 bg-slate-50">
+                {filterOptions.fields.map((f) => <option key={f} value={f}>حوزه: {f}</option>)}
+              </select>
+              <select value={selectedLevel} onChange={(e) => setSelectedLevel(e.target.value)} className="px-3 py-2 rounded-lg border border-slate-300 bg-slate-50">
+                {filterOptions.levels.map((l) => <option key={l} value={l}>سطح: {l}</option>)}
+              </select>
+              <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value)} className="px-3 py-2 rounded-lg border border-slate-300 bg-slate-50">
+                {filterOptions.statuses.map((s) => <option key={s} value={s}>وضعیت: {s}</option>)}
+              </select>
+              <select value={selectedKB} onChange={(e) => setSelectedKB(e.target.value)} className="px-3 py-2 rounded-lg border border-slate-300 bg-slate-50">
+                <option value="همه">وضعیت دانش‌بنیان: همه</option>
+                <option value="دانش‌بنیان">دانش‌بنیان</option>
+                <option value="غیر دانش‌بنیان">غیر دانش‌بنیان</option>
+              </select>
             </div>
           )}
         </div>
 
-        <h3 className="text-lg font-bold text-slate-900 mb-4">
-          فهرست شرکت‌ها و هسته‌های فناور ({toPersianDigits(filteredCompanies.length)} واحد)
-        </h3>
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCompanies.map((company) => {
-            const isKB =
-              company.knowledgeBased &&
-              company.knowledgeBased.includes('دانش‌بنیان') &&
-              !company.knowledgeBased.includes('خیر');
-            return (
-              <div
-                key={company.id}
-                className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group"
-              >
-                <div className="p-5">
-                  <div className="flex items-start gap-3.5 mb-4">
-                    <CompanyAvatar company={company} size="md" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          {company.status || 'فعال'}
-                        </span>
-                        {isKB && (
-                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                            دانش‌بنیان
-                          </span>
-                        )}
-                      </div>
-                      <h4
-                        onClick={() => onSelectCompany(company)}
-                        className="font-bold text-slate-900 text-base group-hover:text-blue-700 cursor-pointer truncate"
-                      >
-                        {company.name}
-                      </h4>
-                      <p className="text-xs text-slate-500 mt-0.5 truncate">{company.field}</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-600 leading-6 line-clamp-3 mb-4 min-h-[4.5rem]">
-                    {company.shortDesc}
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100 text-xs">
-                    <div className="bg-slate-50 rounded-lg p-2">
-                      <span className="text-slate-400 block text-[11px]">سطح‌بندی</span>
-                      <span className="font-semibold text-slate-700 truncate block">{company.level}</span>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-2">
-                      <span className="text-slate-400 block text-[11px]">تعداد محصولات</span>
-                      <span className="font-semibold text-slate-700">
-                        {toPersianDigits(company.productCount || company.products?.length || 0)} محصول
-                      </span>
-                    </div>
+          {filteredCompanies.map((company) => (
+            <div
+              key={company.id}
+              className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden"
+            >
+              <div className="p-5">
+                <div className="flex items-start gap-3.5 mb-3">
+                  <CompanyAvatar company={company} size="md" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      {company.status}
+                    </span>
+                    <h4
+                      onClick={() => onSelectCompany(company)}
+                      className="font-bold text-slate-900 text-base hover:text-blue-700 cursor-pointer truncate mt-1"
+                    >
+                      {company.name}
+                    </h4>
+                    <p className="text-xs text-slate-500 truncate">{company.field}</p>
                   </div>
                 </div>
-                <div className="px-5 py-3.5 bg-slate-50/80 border-t border-slate-200/80 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400 font-mono" dir="ltr">
-                    /companies/{company.slug}
-                  </span>
-                  <button
-                    onClick={() => onSelectCompany(company)}
-                    className="px-3.5 py-1.5 rounded-lg bg-[#0f294a] hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5"
-                  >
-                    <span>مشاهده شناسنامه شرکت</span>
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                <p className="text-xs text-slate-600 leading-6 line-clamp-3 mb-4">{company.shortDesc}</p>
               </div>
-            );
-          })}
+              <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                <span className="text-xs text-slate-500">{company.level}</span>
+                <button
+                  onClick={() => onSelectCompany(company)}
+                  className="px-3.5 py-1.5 rounded-lg bg-[#0f294a] hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1"
+                >
+                  <span>مشاهده شناسنامه</span>
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </section>
     </div>
   );
 }
 
+// صفحه شناسنامه اختصاصی شرکت (شامل تب عمومی، تب «نیروی انسانی» و تب «اموال تحویلی»)
+function CompanyProfileView({
+  company,
+  companyAssets = [],
+  companyPersonnel = [],
+  companyVehicles = [],
+  accessPolicies,
+  isAdmin,
+  onBack,
+  onEdit,
+  onExportMinutes
+}) {
+  const [profileTab, setProfileTab] = useState('general');
+  if (!company) return null;
+
+  const canShowInvestment = isAdmin || (accessPolicies.investmentData !== 'admin_only' && company.publishInvestment);
+  const canShowSales = isAdmin || (accessPolicies.salesData !== 'admin_only' && company.publishSales);
+  const activePersonnel = companyPersonnel.filter((p) => p.cooperationStatus === 'فعال');
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6 no-print">
+        <button
+          onClick={onBack}
+          className="px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium flex items-center gap-2"
+        >
+          <ArrowRight className="w-4 h-4" />
+          <span>بازگشت</span>
+        </button>
+        <div className="flex items-center gap-2.5">
+          {isAdmin && (
+            <button
+              onClick={() => onEdit(company)}
+              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-sm font-semibold flex items-center gap-1.5"
+            >
+              <Edit className="w-4 h-4" />
+              <span>ویرایش اطلاعات</span>
+            </button>
+          )}
+          <button
+            onClick={() => window.print()}
+            className="px-4 py-2 rounded-xl bg-[#0f294a] hover:bg-blue-800 text-white text-sm font-semibold flex items-center gap-1.5"
+          >
+            <Printer className="w-4 h-4" />
+            <span>دریافت PDF / چاپ</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-gradient-to-l from-[#0b1f3a] to-[#1e3a8a] text-white p-6 sm:p-8">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
+            <CompanyAvatar company={company} size="lg" />
+            <div className="flex-1">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-200">
+                  {company.status}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-500/20 text-sky-200">
+                  {company.level}
+                </span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold mb-1">{company.name}</h1>
+              <p className="text-sky-200 text-sm">{company.field}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* تب‌های پرونده شرکت */}
+        <div className="flex overflow-x-auto border-b border-slate-200 bg-slate-50 px-6 pt-3 gap-2 no-print">
+          <button
+            onClick={() => setProfileTab('general')}
+            className={`px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold whitespace-nowrap ${
+              profileTab === 'general' ? 'bg-white text-[#0f294a] border-t border-x border-slate-200' : 'text-slate-600'
+            }`}
+          >
+            شناسنامه عمومی و محصولات
+          </button>
+          <button
+            onClick={() => setProfileTab('hr')}
+            className={`px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold flex items-center gap-2 whitespace-nowrap ${
+              profileTab === 'hr' ? 'bg-white text-[#0f294a] border-t border-x border-slate-200' : 'text-slate-600'
+            }`}
+          >
+            <Users className="w-4 h-4 text-blue-600" />
+            <span>نیروی انسانی ({toPersianDigits(activePersonnel.length)})</span>
+          </button>
+          <button
+            onClick={() => setProfileTab('assets')}
+            className={`px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold flex items-center gap-2 whitespace-nowrap ${
+              profileTab === 'assets' ? 'bg-white text-[#0f294a] border-t border-x border-slate-200' : 'text-slate-600'
+            }`}
+          >
+            <Armchair className="w-4 h-4 text-blue-600" />
+            <span>اموال تحویلی ({toPersianDigits(companyAssets.length)})</span>
+          </button>
+        </div>
+
+        {profileTab === 'hr' ? (
+          <div className="p-6 sm:p-8 space-y-6 text-xs">
+            <div>
+              <h2 className="text-base font-bold text-[#0f294a]">
+                ساختار نیروی انسانی، قراردادها و خودروهای تردد ({company.name})
+              </h2>
+              <p className="text-slate-500 mt-0.5">
+                پرسنل فعال ثبت‌شده: <b>{toPersianDigits(activePersonnel.length)} نفر</b> | کل سوابق: <b>{toPersianDigits(companyPersonnel.length)} نفر</b>
+              </p>
+            </div>
+
+            {companyPersonnel.length === 0 ? (
+              <div className="p-8 rounded-2xl bg-slate-50 border border-slate-200 text-center text-slate-500">
+                اطلاعات تفصیلی پرسنل برای این شرکت ثبت نشده است.
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                  <table className="w-full text-right">
+                    <thead className="bg-slate-50 text-slate-700 border-b border-slate-200">
+                      <tr>
+                        <th className="py-3 px-3">نام و نام خانوادگی</th>
+                        <th className="py-3 px-3">شماره ملی</th>
+                        <th className="py-3 px-3">جایگاه شغلی / واحد</th>
+                        <th className="py-3 px-3">نوع قرارداد</th>
+                        <th className="py-3 px-3">وضعیت حضور</th>
+                        <th className="py-3 px-3">وضعیت همکاری</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {companyPersonnel.map((p) => (
+                        <tr key={p.id} className="hover:bg-slate-50">
+                          <td className="py-3 px-3 font-bold text-slate-900">{p.firstName} {p.lastName}</td>
+                          <td className="py-3 px-3 font-mono" dir="ltr">
+                            {isAdmin ? toPersianDigits(p.nationalId) : toPersianDigits(maskNationalId(p.nationalId))}
+                          </td>
+                          <td className="py-3 px-3">{p.jobTitle} ({p.orgUnit})</td>
+                          <td className="py-3 px-3">{p.contractType}</td>
+                          <td className="py-3 px-3">{p.attendanceMode}</td>
+                          <td className="py-3 px-3">
+                            <span className={`px-2 py-0.5 rounded-full font-semibold ${p.cooperationStatus === 'فعال' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
+                              {p.cooperationStatus}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                  <h3 className="font-bold text-sm text-[#0f294a] flex items-center gap-2">
+                    <Car className="w-4 h-4 text-blue-600" />
+                    خودروهای مجاز تردد ثبت‌شده
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {companyVehicles.map((cv) => (
+                      <div key={cv.id} className="p-3 rounded-xl bg-white border border-slate-200 flex justify-between">
+                        <span><b>{cv.brandModel}</b> ({cv.ownerType})</span>
+                        <span className="font-mono font-bold text-blue-900">{toPersianDigits(cv.plateNumber)}</span>
+                      </div>
+                    ))}
+                    {companyPersonnel.flatMap((p) =>
+                      (p.vehicles || []).map((v) => (
+                        <div key={v.id} className="p-3 rounded-xl bg-white border border-slate-200 flex justify-between">
+                          <span><b>{v.brandModel}</b> — {p.firstName} {p.lastName}</span>
+                          <span className="font-mono font-bold text-slate-800">{toPersianDigits(v.plateNumber)}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        ) : profileTab === 'assets' ? (
+          <div className="p-6 sm:p-8 space-y-5 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-base font-bold text-[#0f294a]">
+                فهرست اموال و تجهیزات تحویلی مرکز رشد به شرکت ({company.name})
+              </h2>
+              <button
+                onClick={() => onExportMinutes(company, companyAssets)}
+                className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold flex items-center gap-1.5"
+              >
+                <Download className="w-4 h-4" />
+                <span>دریافت صورت‌جلسه Word</span>
+              </button>
+            </div>
+            {companyAssets.length === 0 ? (
+              <p className="text-slate-500 py-6 text-center bg-slate-50 rounded-2xl">اموالی برای این شرکت ثبت نشده است.</p>
+            ) : (
+              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                <table className="w-full text-right">
+                  <thead className="bg-slate-50 border-b">
+                    <tr>
+                      <th className="py-3 px-3">نام قلم</th>
+                      <th className="py-3 px-3">کد اموال</th>
+                      <th className="py-3 px-3">اولیه</th>
+                      <th className="py-3 px-3">اضافه‌شده</th>
+                      <th className="py-3 px-3">مسترد</th>
+                      <th className="py-3 px-3">موجودی فعلی</th>
+                      <th className="py-3 px-3">وضعیت تأیید</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {companyAssets.map((it) => {
+                      const q = computeAssetQuantities(it);
+                      return (
+                        <tr key={it.id}>
+                          <td className="py-3 px-3 font-bold">{it.itemName}</td>
+                          <td className="py-3 px-3 font-mono">{toPersianDigits(it.assetCode || '—')}</td>
+                          <td className="py-3 px-3">{toPersianDigits(q.initialQty)}</td>
+                          <td className="py-3 px-3 text-emerald-700">+{toPersianDigits(q.addedQty)}</td>
+                          <td className="py-3 px-3 text-rose-700">-{toPersianDigits(q.returnedQty)}</td>
+                          <td className="py-3 px-3 font-extrabold text-blue-900">{toPersianDigits(q.currentQty)}</td>
+                          <td className="py-3 px-3">{it.confirmationStatus}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="p-6 sm:p-8 space-y-6">
+            <div>
+              <h2 className="text-base font-bold text-[#0f294a] mb-2">معرفی عمومی</h2>
+              <p className="text-sm text-slate-700 leading-7">{company.shortDesc}</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+              <div className="bg-slate-50 p-3.5 rounded-xl border">نوع شرکت: <b>{company.companyType}</b></div>
+              <div className="bg-slate-50 p-3.5 rounded-xl border">تاریخ تأسیس: <b>{toPersianDigits(company.establishedDate)}</b></div>
+              <div className="bg-slate-50 p-3.5 rounded-xl border">تلفن ثابت: <b dir="ltr">{toPersianDigits(company.landline)}</b></div>
+              <div className="bg-slate-50 p-3.5 rounded-xl border">نیروی انسانی: <b>{toPersianDigits(company.totalStaff)} نفر</b></div>
+            </div>
+            {canShowInvestment && company.investmentAmount && (
+              <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs">
+                میزان سرمایه‌گذاری جذب‌شده: <b>{toPersianDigits(company.investmentAmount)}</b>
+              </div>
+            )}
+            {canShowSales && company.salesYear1 && (
+              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs">
+                فروش سال اول: <b>{toPersianDigits(company.salesYear1)}</b> | سال دوم: <b>{toPersianDigits(company.salesYear2)}</b>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// ۶. کامپوننت‌های مدیریت شرکت‌ها (داشبورد، لیست، فرم ۸ تبی، اکسل، تنظیمات)
+// ============================================================================
 function AdminDashboardTab({ stats, onNavigateTab, onEditCompany }) {
   const maxFieldCount = Math.max(...Object.values(stats.byField), 1);
   return (
@@ -5941,7 +2785,7 @@ function AdminDashboardTab({ stats, onNavigateTab, onEditCompany }) {
           { label: 'شرکت‌های فعال', val: stats.activeCount, color: 'border-emerald-500' },
           { label: 'شرکت‌های خارج‌شده', val: stats.exitedCount, color: 'border-slate-500' },
           { label: 'شرکت‌های دانش‌بنیان', val: stats.kbCount, color: 'border-indigo-500' },
-          { label: 'مجموع محصولات ثبت‌شده', val: stats.totalProducts, color: 'border-amber-500' }
+          { label: 'مجموع محصولات', val: stats.totalProducts, color: 'border-amber-500' }
         ].map((card, i) => (
           <div key={i} className={`bg-white rounded-2xl p-5 border-r-4 ${card.color} shadow-sm border border-slate-200`}>
             <span className="text-xs text-slate-500 block mb-2">{card.label}</span>
@@ -5953,155 +2797,101 @@ function AdminDashboardTab({ stats, onNavigateTab, onEditCompany }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
           <h3 className="text-base font-bold text-slate-900 mb-4">تعداد شرکت‌ها بر اساس حوزه فعالیت</h3>
-          <div className="space-y-3.5">
+          <div className="space-y-3">
             {Object.entries(stats.byField).map(([field, count]) => (
               <div key={field}>
                 <div className="flex justify-between text-xs font-medium mb-1">
                   <span>{field}</span>
-                  <span className="font-bold text-blue-800">{toPersianDigits(count)} شرکت</span>
+                  <b>{toPersianDigits(count)} شرکت</b>
                 </div>
                 <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-l from-blue-600 to-sky-400 rounded-full"
-                    style={{ width: `${(count / maxFieldCount) * 100}%` }}
-                  />
+                  <div className="h-full bg-blue-600 rounded-full" style={{ width: `${(count / maxFieldCount) * 100}%` }} />
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div>
-            <h3 className="text-base font-bold text-slate-900 mb-4">شرکت‌های دارای عضویت رو به اتمام</h3>
-            {stats.expiringCompanies.map((c) => (
-              <div key={c.id} className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 flex items-center justify-between gap-3 mb-2">
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900">{c.name}</h4>
-                  <p className="text-xs text-slate-600">پایان ۳ سال: {toPersianDigits(c.threeYearEndDate)}</p>
-                </div>
-                <button
-                  onClick={() => onEditCompany(c)}
-                  className="px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-xs font-semibold"
-                >
-                  بررسی
-                </button>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 pt-4 border-t border-slate-100 flex gap-2">
-            <button
-              onClick={() => onNavigateTab('excel')}
-              className="flex-1 py-2.5 px-4 rounded-xl bg-blue-600 text-white text-xs font-semibold"
-            >
-              بارگذاری اکسل شرکت‌ها
-            </button>
-            <button
-              onClick={() => onNavigateTab('form')}
-              className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 text-slate-800 text-xs font-semibold"
-            >
-              ثبت دستی شرکت جدید
-            </button>
-          </div>
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-3">
+          <h3 className="text-base font-bold text-slate-900">عملیات سریع مدیریت بانک شرکت‌ها</h3>
+          <button onClick={() => onNavigateTab('comp_excel')} className="w-full py-3 px-4 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center justify-center gap-2">
+            <Upload className="w-4 h-4" />
+            <span>بارگذاری گروهی اکسل شرکت‌ها</span>
+          </button>
+          <button onClick={() => onNavigateTab('comp_form')} className="w-full py-3 px-4 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold flex items-center justify-center gap-2">
+            <Plus className="w-4 h-4" />
+            <span>ثبت دستی شرکت جدید</span>
+          </button>
+          {stats.expiringCompanies.map((c) => (
+            <div key={c.id} className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex justify-between items-center text-xs">
+              <span><b>{c.name}</b> — {c.membershipStatus}</span>
+              <button onClick={() => onEditCompany(c)} className="px-2.5 py-1 rounded bg-white border border-amber-300 font-bold">بررسی</button>
+            </div>
+          ))}
         </div>
       </div>
     </div>
   );
 }
 
-function AdminCompaniesListTab({
-  companies,
-  setCompanies,
-  isSuperAdmin,
-  onEdit,
-  onViewPublic,
-  showToast
-}) {
+function AdminCompaniesListTab({ companies, setCompanies, isSuperAdmin, adminUser, onEdit, onViewPublic, showToast }) {
   const [search, setSearch] = useState('');
-  const filtered = companies.filter(
-    (c) => !search || (c.name && c.name.includes(search)) || (c.nationalId && c.nationalId.includes(search))
-  );
-
-  const togglePublish = (id) => {
-    setCompanies((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, isPublic: !c.isPublic } : c))
-    );
-    showToast('وضعیت انتشار عمومی به‌روزرسانی شد.');
-  };
-
-  const toggleFeatured = (id) => {
-    setCompanies((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, isFeatured: !c.isFeatured } : c))
-    );
-    showToast('وضعیت منتخب تغییر کرد.');
-  };
+  const filtered = companies.filter((c) => !search || (c.name && c.name.includes(search)) || (c.nationalId && c.nationalId.includes(search)));
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="p-5 border-b border-slate-200 flex items-center justify-between gap-3">
+      <div className="p-5 border-b border-slate-200 flex flex-wrap justify-between gap-3">
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="جست‌وجو بر اساس نام شرکت یا شناسه ملی..."
-          className="w-full max-w-md px-4 py-2 rounded-xl border border-slate-300 text-sm"
+          placeholder="جست‌وجو نام شرکت یا شناسه ملی..."
+          className="px-4 py-2 rounded-xl border border-slate-300 text-sm max-w-md w-full"
         />
-        <span className="text-xs text-slate-500">{toPersianDigits(filtered.length)} رکورد</span>
+        <span className="text-xs text-slate-500 self-center">{toPersianDigits(filtered.length)} رکورد</span>
       </div>
-
       <div className="overflow-x-auto">
-        <table className="w-full text-right text-sm">
-          <thead className="bg-slate-50 text-slate-600 text-xs border-b border-slate-200">
+        <table className="w-full text-right text-xs">
+          <thead className="bg-slate-50 border-b">
             <tr>
-              <th className="py-3.5 px-4">نام شرکت / هسته</th>
+              <th className="py-3.5 px-4">نام شرکت</th>
               <th className="py-3.5 px-4">حوزه فعالیت</th>
+              <th className="py-3.5 px-4">وضعیت</th>
               <th className="py-3.5 px-4 text-center">انتشار عمومی</th>
-              <th className="py-3.5 px-4 text-center">منتخب</th>
               <th className="py-3.5 px-4 text-center">عملیات</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-200">
+          <tbody className="divide-y">
             {filtered.map((c) => (
-              <tr key={c.id} className="hover:bg-slate-50/80">
-                <td className="py-3.5 px-4 font-bold text-slate-900">{c.name}</td>
-                <td className="py-3.5 px-4 text-xs text-slate-700">{c.field}</td>
+              <tr key={c.id} className="hover:bg-slate-50">
+                <td className="py-3.5 px-4 font-bold">{c.name}</td>
+                <td className="py-3.5 px-4">{c.field}</td>
+                <td className="py-3.5 px-4">{c.status} ({c.level})</td>
                 <td className="py-3.5 px-4 text-center">
                   <button
-                    onClick={() => togglePublish(c.id)}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                      c.isPublic ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
-                    }`}
+                    onClick={() => {
+                      setCompanies((prev) => prev.map((x) => (x.id === c.id ? { ...x, isPublic: !x.isPublic } : x)));
+                      showToast('وضعیت انتشار تغییر کرد.');
+                    }}
+                    className={`px-3 py-1 rounded-full font-bold ${c.isPublic ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}
                   >
-                    {c.isPublic ? 'منتشر شده' : 'پیش‌نویس'}
+                    {c.isPublic ? 'منتشرشده' : 'پیش‌نویس'}
                   </button>
                 </td>
-                <td className="py-3.5 px-4 text-center">
-                  <button onClick={() => toggleFeatured(c.id)}>
-                    <Star className={`w-5 h-5 ${c.isFeatured ? 'text-amber-500 fill-amber-400' : 'text-slate-300'}`} />
-                  </button>
-                </td>
-                <td className="py-3.5 px-4 text-center">
-                  <div className="flex justify-center gap-1.5">
-                    <button onClick={() => onViewPublic(c)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg">
-                      <FileText className="w-4 h-4" />
+                <td className="py-3.5 px-4 text-center space-x-1 space-x-reverse">
+                  <button onClick={() => onViewPublic(c)} className="p-1.5 text-blue-600"><Eye className="w-4 h-4" /></button>
+                  <button onClick={() => onEdit(c)} className="p-1.5 text-amber-600"><Edit className="w-4 h-4" /></button>
+                  {isSuperAdmin && (
+                    <button
+                      onClick={() => {
+                        setCompanies((prev) => prev.filter((x) => x.id !== c.id));
+                        showToast('شرکت حذف شد.');
+                      }}
+                      className="p-1.5 text-rose-600"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </button>
-                    <button onClick={() => onEdit(c)} className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg">
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    {isSuperAdmin && (
-                      <button
-                        onClick={() => {
-                          if (window.confirm(`حذف «${c.name}»؟`)) {
-                            setCompanies((prev) => prev.filter((item) => item.id !== c.id));
-                            showToast('شرکت حذف شد.');
-                          }
-                        }}
-                        className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </td>
               </tr>
             ))}
@@ -6112,84 +2902,35 @@ function AdminCompaniesListTab({
   );
 }
 
-function AdminCompanyFormTab({ editingCompany, companies, setCompanies, onDone, showToast }) {
-  const [formTab, setFormTab] = useState(1);
-  const emptyCompany = {
-    rowNumber: String(companies.length + 1),
-    status: 'فعال',
-    level: 'سطح ۳ (پیش‌رشد)',
-    name: '',
-    nationalId: '',
-    registrationNumber: '',
-    companyType: 'سهامی خاص',
-    establishedDate: '',
-    registeredCapital: '',
-    shortDesc: '',
-    logoUrl: '',
-    ceoName: '',
-    ceoPhone: '',
-    ceoNationalId: '',
-    ceoBirthDate: '',
-    ceoDegree: '',
-    ceoUniversity: '',
-    chairmanName: '',
-    chairmanPhone: '',
-    unitNumber: '',
-    unitArea: '',
-    postalCode: '',
-    visitable: 'بله',
-    locationStatus: 'مستقر در مرکز رشد',
-    workshopCode: '',
-    economicCode: '',
-    landline: '',
-    email: '',
-    website: '',
-    field: 'هوش مصنوعی و فناوری اطلاعات',
-    knowledgeBased: 'خیر',
-    recruitmentBase: '',
-    techLicense: 'در دست اقدام',
-    techLicenseTopic: '',
-    productCount: 1,
-    products: [{ name: '', brand: '', status: 'نمونه اولیه', description: '', patent: 'ندارد' }],
-    initialStaff: 0,
-    thirdYearStaff: 0,
-    totalStaff: 0,
-    femaleStaff: 0,
-    targetAudience: '',
-    investmentRaised: 'خیر',
-    investmentAmount: '',
-    revenueModel: '',
-    salesYear1: '',
-    salesYear2: '',
-    salesYear3: '',
-    salesYear4: '',
-    entryDate: '',
-    preIncubationEndDate: '',
-    incubationEntryDate: '',
-    membershipStatus: 'پیش‌رشد',
-    threeYearEndDate: '',
-    renewalDate: '',
-    exitDate: '',
-    exitResult: '',
-    notes: '',
-    isPublic: false,
-    isFeatured: false,
-    publishInvestment: false,
-    publishSales: false
-  };
-
-  const [formData, setFormData] = useState(() => (editingCompany ? { ...emptyCompany, ...editingCompany } : emptyCompany));
-  const updateField = (k, v) => setFormData((p) => ({ ...p, [k]: v }));
+function AdminCompanyFormTab({ editingCompany, companies, setCompanies, adminUser, onDone, showToast }) {
+  const [formData, setFormData] = useState(
+    editingCompany || {
+      name: '',
+      status: 'فعال',
+      level: 'سطح ۳ (پیش‌رشد)',
+      companyType: 'سهامی خاص',
+      nationalId: '',
+      ceoName: '',
+      unitNumber: '',
+      field: 'هوش مصنوعی و فناوری اطلاعات',
+      knowledgeBased: 'خیر',
+      totalStaff: 0,
+      femaleStaff: 0,
+      shortDesc: '',
+      isPublic: true,
+      isFeatured: false
+    }
+  );
 
   const handleSave = (e) => {
     e.preventDefault();
     if (!formData.name.trim()) {
-      showToast('وارد کردن نام شرکت الزامی است.', 'error');
+      showToast('نام شرکت الزامی است.', 'error');
       return;
     }
     if (editingCompany) {
       setCompanies((prev) => prev.map((c) => (c.id === editingCompany.id ? formData : c)));
-      showToast('اطلاعات شرکت به‌روزرسانی شد.');
+      showToast('تغییرات ذخیره شد.');
     } else {
       setCompanies((prev) => [{ ...formData, id: 'comp-' + Date.now(), slug: generateSlug(formData.name) }, ...prev]);
       showToast('شرکت جدید ثبت شد.');
@@ -6197,240 +2938,105 @@ function AdminCompanyFormTab({ editingCompany, companies, setCompanies, onDone, 
     onDone();
   };
 
-  const tabs = [
-    { id: 1, title: '۱. هویتی و ثبتی' },
-    { id: 2, title: '۲. مدیرعامل و هیئت‌مدیره' },
-    { id: 3, title: '۳. استقرار و ارتباطی' },
-    { id: 4, title: '۴. فناوری و محصولات' },
-    { id: 5, title: '۵. نیروی انسانی' },
-    { id: 6, title: '۶. اقتصادی و فروش' },
-    { id: 7, title: '۷. عضویت و انتشار' }
-  ];
-
   return (
-    <form onSubmit={handleSave} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="p-5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-        <h3 className="font-bold text-slate-900">
-          {editingCompany ? `ویرایش: ${editingCompany.name}` : 'ثبت دستی شرکت جدید'}
-        </h3>
-        <div className="flex gap-2">
-          <button type="button" onClick={onDone} className="px-4 py-2 rounded-xl border text-xs">
-            انصراف
-          </button>
-          <button type="submit" className="px-5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold">
-            ذخیره اطلاعات
-          </button>
+    <form onSubmit={handleSave} className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4 text-xs">
+      <h3 className="text-base font-bold text-slate-900">{editingCompany ? `ویرایش: ${editingCompany.name}` : 'ثبت شرکت جدید'}</h3>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label className="block font-bold mb-1">نام شرکت / هسته فناور *</label>
+          <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-3 py-2 rounded-xl border" required />
+        </div>
+        <div>
+          <label className="block font-bold mb-1">شناسه ملی</label>
+          <input type="text" dir="ltr" value={formData.nationalId} onChange={(e) => setFormData({ ...formData, nationalId: e.target.value })} className="w-full px-3 py-2 rounded-xl border" />
+        </div>
+        <div>
+          <label className="block font-bold mb-1">سطح‌بندی</label>
+          <select value={formData.level} onChange={(e) => setFormData({ ...formData, level: e.target.value })} className="w-full px-3 py-2 rounded-xl border bg-white">
+            <option value="سطح ۳ (پیش‌رشد)">سطح ۳ (پیش‌رشد)</option>
+            <option value="سطح ۲ (رشد مقدماتی)">سطح ۲ (رشد مقدماتی)</option>
+            <option value="سطح ۱ (رشد پیشرفته)">سطح ۱ (رشد پیشرفته)</option>
+          </select>
+        </div>
+        <div>
+          <label className="block font-bold mb-1">نام مدیرعامل</label>
+          <input type="text" value={formData.ceoName} onChange={(e) => setFormData({ ...formData, ceoName: e.target.value })} className="w-full px-3 py-2 rounded-xl border" />
+        </div>
+        <div>
+          <label className="block font-bold mb-1">حوزه فعالیت</label>
+          <input type="text" value={formData.field} onChange={(e) => setFormData({ ...formData, field: e.target.value })} className="w-full px-3 py-2 rounded-xl border" />
+        </div>
+        <div>
+          <label className="block font-bold mb-1">واحد استقرار</label>
+          <input type="text" value={formData.unitNumber} onChange={(e) => setFormData({ ...formData, unitNumber: e.target.value })} className="w-full px-3 py-2 rounded-xl border" />
+        </div>
+        <div className="md:col-span-3">
+          <label className="block font-bold mb-1">معرفی کوتاه</label>
+          <textarea rows={3} value={formData.shortDesc} onChange={(e) => setFormData({ ...formData, shortDesc: e.target.value })} className="w-full px-3 py-2 rounded-xl border" />
         </div>
       </div>
-
-      <div className="flex overflow-x-auto border-b border-slate-200 bg-slate-100/70 px-3 pt-2 gap-1">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setFormTab(t.id)}
-            className={`px-3.5 py-2 rounded-t-xl text-xs font-semibold whitespace-nowrap ${
-              formTab === t.id ? 'bg-white text-blue-800 border-t border-x border-slate-200' : 'text-slate-600'
-            }`}
-          >
-            {t.title}
-          </button>
-        ))}
-      </div>
-
-      <div className="p-6">
-        {formTab === 1 && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="md:col-span-2">
-              <label className="block text-xs font-bold mb-1">نام شرکت / هسته فناور *</label>
-              <input type="text" value={formData.name} onChange={(e) => updateField('name', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" required />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">شناسه ملی</label>
-              <input type="text" dir="ltr" value={formData.nationalId} onChange={(e) => updateField('nationalId', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">وضعیت</label>
-              <input type="text" value={formData.status} onChange={(e) => updateField('status', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">سطح‌بندی</label>
-              <input type="text" value={formData.level} onChange={(e) => updateField('level', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">تاریخ تأسیس</label>
-              <input type="text" dir="ltr" value={formData.establishedDate} onChange={(e) => updateField('establishedDate', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-            <div className="md:col-span-3">
-              <label className="block text-xs font-semibold mb-1">معرفی کوتاه</label>
-              <textarea rows={3} value={formData.shortDesc} onChange={(e) => updateField('shortDesc', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-          </div>
-        )}
-        {formTab === 2 && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-semibold mb-1">نام مدیرعامل</label>
-              <input type="text" value={formData.ceoName} onChange={(e) => updateField('ceoName', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">شماره تماس مدیرعامل</label>
-              <input type="text" dir="ltr" value={formData.ceoPhone} onChange={(e) => updateField('ceoPhone', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">کد ملی مدیرعامل</label>
-              <input type="text" dir="ltr" value={formData.ceoNationalId} onChange={(e) => updateField('ceoNationalId', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-          </div>
-        )}
-        {formTab === 3 && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-semibold mb-1">شماره واحد</label>
-              <input type="text" value={formData.unitNumber} onChange={(e) => updateField('unitNumber', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">شماره ثابت</label>
-              <input type="text" dir="ltr" value={formData.landline} onChange={(e) => updateField('landline', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">وبگاه</label>
-              <input type="text" dir="ltr" value={formData.website} onChange={(e) => updateField('website', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-          </div>
-        )}
-        {formTab === 4 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold mb-1">حوزه فعالیت</label>
-              <input type="text" value={formData.field} onChange={(e) => updateField('field', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">وضعیت دانش‌بنیان</label>
-              <input type="text" value={formData.knowledgeBased} onChange={(e) => updateField('knowledgeBased', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-          </div>
-        )}
-        {formTab === 5 && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-semibold mb-1">کل نیروی انسانی</label>
-              <input type="number" value={formData.totalStaff} onChange={(e) => updateField('totalStaff', Number(e.target.value))} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">تعداد بانوان</label>
-              <input type="number" value={formData.femaleStaff} onChange={(e) => updateField('femaleStaff', Number(e.target.value))} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">نیروی ابتدای ورود</label>
-              <input type="number" value={formData.initialStaff} onChange={(e) => updateField('initialStaff', Number(e.target.value))} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-          </div>
-        )}
-        {formTab === 6 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold mb-1">مدل درآمدی</label>
-              <input type="text" value={formData.revenueModel} onChange={(e) => updateField('revenueModel', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">میزان سرمایه‌گذاری</label>
-              <input type="text" value={formData.investmentAmount} onChange={(e) => updateField('investmentAmount', e.target.value)} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm" />
-            </div>
-          </div>
-        )}
-        {formTab === 7 && (
-          <div className="space-y-3">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={formData.isPublic} onChange={(e) => updateField('isPublic', e.target.checked)} />
-              <span>انتشار عمومی در وب‌سایت</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={formData.isFeatured} onChange={(e) => updateField('isFeatured', e.target.checked)} />
-              <span>نمایش در شرکت‌های منتخب</span>
-            </label>
-          </div>
-        )}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onDone} className="px-4 py-2 rounded-xl border">انصراف</button>
+        <button type="submit" className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold">ذخیره اطلاعات</button>
       </div>
     </form>
   );
 }
 
-function AdminExcelImportTab({ setCompanies, onDone, showToast }) {
-  const [excelHeaders, setExcelHeaders] = useState([]);
-  const [rawRows, setRawRows] = useState([]);
-  const [columnMapping, setColumnMapping] = useState({});
+function AdminExcelImportTab({ companies, setCompanies, onDone, showToast }) {
+  const [rows, setRows] = useState([]);
 
-  const handleFileUpload = (e) => {
+  const handleFile = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!window.XLSX) {
-      showToast('کتابخانه اکسل در حال بارگذاری است، لطفاً چند ثانیه صبر کنید.', 'error');
+      showToast('کتابخانه پردازش اکسل در حال بارگذاری است؛ چند ثانیه دیگر دوباره تلاش کنید.', 'error');
       return;
     }
     const reader = new FileReader();
     reader.onload = (evt) => {
-      const data = new Uint8Array(evt.target.result);
-      const wb = window.XLSX.read(data, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = window.XLSX.utils.sheet_to_json(ws, { defval: '' });
-      if (!rows.length) return;
-      const headers = Object.keys(rows[0]);
-      setExcelHeaders(headers);
-      setRawRows(rows);
-      const autoMap = {};
-      headers.forEach((h) => {
-        const matched = DB_FIELD_DEFINITIONS.find((d) => d.aliases.some((a) => h.includes(a)));
-        autoMap[h] = matched ? matched.key : '';
-      });
-      setColumnMapping(autoMap);
-      showToast(`${toPersianDigits(rows.length)} ردیف خوانده شد.`);
+      const wb = window.XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+      const data = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+      setRows(data);
+      showToast(`${toPersianDigits(data.length)} ردیف از اکسل خوانده شد.`);
     };
     reader.readAsArrayBuffer(file);
   };
 
   const handleImport = () => {
-    const newItems = rawRows
+    const mapped = rows
+      .filter((r) => r['نام شرکت'] || r['نام شرکت/هسته فناور'])
       .map((r, idx) => {
-        const obj = { id: 'comp-' + Date.now() + '-' + idx, isPublic: true, products: [] };
-        Object.entries(columnMapping).forEach(([col, key]) => {
-          if (key) obj[key] = r[col];
-        });
-        obj.slug = generateSlug(obj.name);
-        return obj;
-      })
-      .filter((o) => o.name);
-    setCompanies((prev) => [...newItems, ...prev]);
-    showToast(`${toPersianDigits(newItems.length)} شرکت وارد پایگاه داده شد.`);
+        const name = r['نام شرکت/هسته فناور'] || r['نام شرکت'];
+        return {
+          id: 'comp-xl-' + Date.now() + '-' + idx,
+          slug: generateSlug(name),
+          name,
+          nationalId: String(r['شناسه ملی'] || ''),
+          status: r['وضعیت'] || 'فعال',
+          level: r['سطح‌بندی'] || 'سطح ۲ (رشد مقدماتی)',
+          field: r['حوزه فعالیت'] || 'فناوری اطلاعات',
+          ceoName: r['نام مدیرعامل'] || '',
+          totalStaff: Number(r['تعداد کل نیروی انسانی']) || 0,
+          femaleStaff: Number(r['تعداد بانوان']) || 0,
+          shortDesc: r['توضیحات'] || 'شرکت عضو مرکز رشد فناوری نخبگان',
+          isPublic: true,
+          isFeatured: false
+        };
+      });
+    setCompanies((prev) => [...mapped, ...prev]);
+    showToast(`${toPersianDigits(mapped.length)} شرکت وارد پایگاه داده شد.`);
     onDone();
   };
 
   return (
-    <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-5">
-      <h3 className="font-bold text-base">بارگذاری گروهی شرکت‌ها از فایل اکسل (XLSX / XLS)</h3>
-      <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="block text-xs" />
-      {rawRows.length > 0 && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-            {excelHeaders.map((h) => (
-              <div key={h} className="p-2 border rounded-xl">
-                <span className="block font-bold mb-1">{h}</span>
-                <select
-                  value={columnMapping[h] || ''}
-                  onChange={(e) => setColumnMapping((p) => ({ ...p, [h]: e.target.value }))}
-                  className="w-full border rounded p-1"
-                >
-                  <option value="">نادیده گرفتن</option>
-                  {DB_FIELD_DEFINITIONS.map((d) => (
-                    <option key={d.key} value={d.key}>
-                      {d.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
-          </div>
-          <button onClick={handleImport} className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold">
+    <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4 text-xs">
+      <h3 className="text-base font-bold">بارگذاری گروهی اطلاعات شرکت‌ها از فایل اکسل (XLSX / XLS)</h3>
+      <input type="file" accept=".xlsx,.xls" onChange={handleFile} className="block" />
+      {rows.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-emerald-700 font-bold">تعداد {toPersianDigits(rows.length)} ردیف آماده انتقال است.</p>
+          <button onClick={handleImport} className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold">
             تأیید و ثبت در پایگاه داده
           </button>
         </div>
@@ -6439,53 +3045,260 @@ function AdminExcelImportTab({ setCompanies, onDone, showToast }) {
   );
 }
 
-function AdminSettingsTab({
-  setCompanies,
-  isSuperAdmin,
-  onBackupJson,
-  onExportExcel,
-  showToast
-}) {
+function AdminSettingsTab({ companies, setCompanies, accessPolicies, setAccessPolicies, showToast }) {
   return (
-    <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-5">
-      <h3 className="font-bold text-base">تنظیمات دسترسی و پشتیبان‌گیری شرکت‌ها</h3>
+    <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4 text-xs">
+      <h3 className="text-base font-bold">تنظیمات سطوح دسترسی و پشتیبان‌گیری</h3>
       <div className="flex flex-wrap gap-3">
-        <button onClick={onExportExcel} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold">
-          خروجی اکسل شرکت‌ها
+        <button
+          onClick={() => {
+            const blob = new Blob([JSON.stringify(companies, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'nokhbegan-backup.json';
+            a.click();
+            showToast('فایل پشتیبان دانلود شد.');
+          }}
+          className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold"
+        >
+          دانلود نسخه پشتیبان (JSON)
         </button>
-        <button onClick={onBackupJson} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold">
-          پشتیبان‌گیری JSON
+        <button
+          onClick={() => {
+            setCompanies(INITIAL_COMPANIES);
+            showToast('داده‌های نمونه اولیه بازیابی شدند.');
+          }}
+          className="px-4 py-2 rounded-xl bg-slate-700 text-white font-bold"
+        >
+          بازیابی داده‌های اولیه
         </button>
-        {isSuperAdmin && (
-          <button
-            onClick={() => {
-              if (window.confirm('حذف داده‌های آزمایشی؟')) {
-                setCompanies([]);
-                showToast('داده‌های آزمایشی پاک شدند.');
-              }
-            }}
-            className="px-4 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold"
-          >
-            حذف داده‌های آزمایشی
-          </button>
-        )}
       </div>
     </div>
   );
 }
 
 // ============================================================================
-// ۸. کامپوننت‌های ماژول «مدیریت اموال و تجهیزات تحویلی»
+// ۷. ماژول مدیریت نیروی انسانی شرکت‌ها (پنل شرکت، کارتابل مرکز رشد و گزارش‌ها)
 // ============================================================================
+const createEmptyPersonnelRecord = (company) => ({
+  id: '',
+  companyId: company?.id || 'comp-1',
+  companyName: company?.name || '',
+  reviewStatus: 'پیش‌نویس',
+  returnNote: '',
+  firstName: '',
+  lastName: '',
+  fatherName: '',
+  nationalId: '',
+  birthDate: '',
+  mobile: '',
+  email: '',
+  gender: 'مرد',
+  avatarUrl: '',
+  jobTitle: '',
+  orgUnit: 'فنی و مهندسی',
+  specialty: '',
+  degree: 'کارشناسی ارشد',
+  major: '',
+  experienceYears: 0,
+  startDate: getTodayJalali(),
+  cooperationType: 'تمام‌وقت',
+  contractType: 'قرارداد استخدامی',
+  contractDuration: 'یک‌ساله',
+  contractStartDate: getTodayJalali(),
+  contractEndDate: '',
+  cooperationStatus: 'فعال',
+  exitDate: '',
+  exitReason: '',
+  attendanceMode: 'حضوری در محل شرکت',
+  weeklyPresenceDays: 5,
+  workingHours: '۰۸:۳۰ الی ۱۷:۰۰',
+  presenceDaysOfWeek: 'شنبه تا چهارشنبه',
+  activityNotes: '',
+  workLocation: 'واحد اختصاصی شرکت در مرکز رشد',
+  hasVehicle: false,
+  vehicles: [],
+  sharedCompanyVehicleIds: [],
+  documents: {
+    contractFile: null,
+    resumeFile: null,
+    educationFile: null,
+    nationalCardFile: null,
+    otherFile: null
+  },
+  history: []
+});
 
-function AssetsDashboardView({ stats, assets, logs, onNavigate }) {
+function CompanyHRPortalView({
+  companies,
+  hrState,
+  setHrState,
+  adminUser,
+  onSavePersonnel,
+  onStatusTransition,
+  showToast
+}) {
+  const lockedCompanyId = adminUser?.secretariatRole === 'company_rep' ? adminUser.companyId || 'comp-4' : null;
+  const [selectedCompanyId, setSelectedCompanyId] = useState(lockedCompanyId || companies[0]?.id || 'comp-1');
+  const activeCompany = companies.find((c) => c.id === selectedCompanyId) || companies[0];
+
+  const companyPersonnel = useMemo(
+    () => (hrState.personnel || []).filter((p) => p.companyId === selectedCompanyId),
+    [hrState.personnel, selectedCompanyId]
+  );
+
+  const companySharedVehicles = useMemo(
+    () => (hrState.companyVehicles || []).filter((v) => v.companyId === selectedCompanyId),
+    [hrState.companyVehicles, selectedCompanyId]
+  );
+
+  const stats = useMemo(() => {
+    const active = companyPersonnel.filter((p) => p.cooperationStatus === 'فعال');
+    const fullTime = active.filter((p) => p.cooperationType === 'تمام‌وقت').length;
+    const partTime = active.filter((p) => p.cooperationType === 'پاره‌وقت').length;
+    const projectOrConsult = active.filter((p) => ['پروژه‌ای', 'مشاور'].includes(p.cooperationType)).length;
+    const onSite = active.filter((p) => p.attendanceMode === 'حضوری در محل شرکت').length;
+    const remote = active.filter((p) => p.attendanceMode === 'دورکار / مجازی').length;
+    const withVehicle = active.filter(
+      (p) => p.hasVehicle || (p.vehicles?.length || 0) > 0 || (p.sharedCompanyVehicleIds?.length || 0) > 0
+    ).length;
+    const expiringContracts = active.filter(
+      (p) =>
+        p.contractEndDate &&
+        (p.contractEndDate.startsWith('1404') || p.contractEndDate.startsWith('1405/01') || p.contractEndDate.startsWith('1405/02'))
+    ).length;
+
+    return {
+      total: companyPersonnel.length,
+      active: active.length,
+      fullTime,
+      partTime,
+      projectOrConsult,
+      onSite,
+      remote,
+      withVehicle,
+      expiringContracts
+    };
+  }, [companyPersonnel]);
+
+  const [search, setSearch] = useState('');
+  const [filterContract, setFilterContract] = useState('همه');
+  const [filterAttendance, setFilterAttendance] = useState('همه');
+  const [filterStatus, setFilterStatus] = useState('همه');
+  const [filterRole, setFilterRole] = useState('');
+
+  const filteredPersonnel = useMemo(() => {
+    return companyPersonnel.filter((p) => {
+      const q = search.trim();
+      if (q && !`${p.firstName} ${p.lastName} ${p.nationalId} ${p.jobTitle}`.includes(q)) return false;
+      if (filterContract !== 'همه' && p.contractType !== filterContract) return false;
+      if (filterAttendance !== 'همه' && p.attendanceMode !== filterAttendance) return false;
+      if (filterStatus !== 'همه' && p.cooperationStatus !== filterStatus) return false;
+      if (filterRole.trim() && !(p.jobTitle || '').includes(filterRole.trim())) return false;
+      return true;
+    });
+  }, [companyPersonnel, search, filterContract, filterAttendance, filterStatus, filterRole]);
+
+  const [editingPerson, setEditingPerson] = useState(null);
+  const [formStep, setFormStep] = useState(1);
+  const [quickAddAnother, setQuickAddAnother] = useState(false);
+
+  const [viewingPerson, setViewingPerson] = useState(null);
+  const [exitModalPerson, setExitModalPerson] = useState(null);
+  const [exitDate, setExitDate] = useState(getTodayJalali());
+  const [exitReason, setExitReason] = useState('');
+
+  const [rehireModalPerson, setRehireModalPerson] = useState(null);
+  const [rehireStartDate, setRehireStartDate] = useState(getTodayJalali());
+  const [rehireContractType, setRehireContractType] = useState('قرارداد استخدامی');
+  const [rehireContractEnd, setRehireContractEnd] = useState('');
+
+  const [showSharedVehicleModal, setShowSharedVehicleModal] = useState(false);
+  const [newCompanyVeh, setNewCompanyVeh] = useState({
+    vehicleType: 'سواری',
+    brandModel: '',
+    color: '',
+    plateNumber: '',
+    ownerType: 'متعلق به شرکت',
+    notes: ''
+  });
+
+  const handleFileAttach = (file, cb) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      cb({
+        name: file.name,
+        size: `${Math.max(1, Math.round(file.size / 1024))} KB`,
+        dataUrl: reader.result
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveForm = (sendForReview) => {
+    if (!editingPerson.firstName.trim() || !editingPerson.lastName.trim()) {
+      showToast('وارد کردن نام و نام خانوادگی فرد الزامی است.', 'error');
+      setFormStep(1);
+      return;
+    }
+    const nid = String(editingPerson.nationalId || '').trim();
+    if (!/^\d{10}$/.test(nid)) {
+      showToast('شماره ملی فرد باید دقیقاً ۱۰ رقم عددی باشد.', 'error');
+      setFormStep(1);
+      return;
+    }
+    const duplicate = companyPersonnel.find((p) => p.nationalId === nid && p.id !== editingPerson.id);
+    if (duplicate) {
+      showToast(`فردی با شماره ملی ${toPersianDigits(nid)} قبلاً در این شرکت ثبت شده است.`, 'error');
+      setFormStep(1);
+      return;
+    }
+
+    onSavePersonnel(editingPerson, sendForReview);
+
+    if (quickAddAnother && !editingPerson.id) {
+      setEditingPerson(createEmptyPersonnelRecord(activeCompany));
+      setFormStep(1);
+      showToast('پرونده قبلی ثبت شد؛ فرم برای ثبت پرسنل بعدی آماده است.');
+    } else {
+      setEditingPerson(null);
+    }
+  };
+
+  const handleAddCompanySharedVehicle = (e) => {
+    e.preventDefault();
+    if (!newCompanyVeh.brandModel.trim() || !newCompanyVeh.plateNumber.trim()) {
+      showToast('مدل خودرو و شماره پلاک الزامی است.', 'error');
+      return;
+    }
+    setHrState((prev) => ({
+      ...prev,
+      companyVehicles: [
+        {
+          ...newCompanyVeh,
+          id: 'cveh-' + Date.now(),
+          companyId: activeCompany.id,
+          companyName: activeCompany.name
+        },
+        ...(prev.companyVehicles || [])
+      ]
+    }));
+    setNewCompanyVeh({ vehicleType: 'سواری', brandModel: '', color: '', plateNumber: '', ownerType: 'متعلق به شرکت', notes: '' });
+    setShowSharedVehicleModal(false);
+    showToast('خودرو سازمانی شرکت با موفقیت ثبت شد.');
+  };
+
   const kpiCards = [
-    { label: 'کل اقلام ثبت‌شده', value: stats.totalRecords, icon: Package, color: 'text-blue-700 bg-blue-50 border-blue-200' },
-    { label: 'اقلام تحویل‌شده (تعداد کل)', value: stats.totalDeliveredUnits, icon: Armchair, color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-    { label: 'در انتظار تأیید شرکت', value: stats.pendingCompanyConfirm, icon: Clock, color: 'text-amber-700 bg-amber-50 border-amber-200' },
-    { label: 'اقلام مستردشده به مرکز', value: stats.totalReturnedUnits, icon: CornerUpLeft, color: 'text-slate-700 bg-slate-100 border-slate-200' },
-    { label: 'دارای کسری یا مغایرت', value: stats.discrepancyCount, icon: AlertTriangle, color: 'text-rose-700 bg-rose-50 border-rose-200' },
-    { label: 'شرکت‌های دارای اموال', value: stats.companiesWithAssets, icon: Building2, color: 'text-indigo-700 bg-indigo-50 border-indigo-200' }
+    { label: 'کل افراد ثبت‌شده', value: stats.total, color: 'text-blue-700 bg-blue-50 border-blue-200' },
+    { label: 'افراد فعال', value: stats.active, color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+    { label: 'تمام‌وقت', value: stats.fullTime, color: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
+    { label: 'پاره‌وقت', value: stats.partTime, color: 'text-sky-700 bg-sky-50 border-sky-200' },
+    { label: 'پروژه‌ای و مشاور', value: stats.projectOrConsult, color: 'text-purple-700 bg-purple-50 border-purple-200' },
+    { label: 'حضوری در مرکز', value: stats.onSite, color: 'text-teal-700 bg-teal-50 border-teal-200' },
+    { label: 'دورکار / مجازی', value: stats.remote, color: 'text-slate-700 bg-slate-100 border-slate-200' },
+    { label: 'دارای خودروی ثبت‌شده', value: stats.withVehicle, color: 'text-amber-700 bg-amber-50 border-amber-200' },
+    { label: 'قرارداد نزدیک به پایان', value: stats.expiringContracts, color: 'text-rose-700 bg-rose-50 border-rose-200' }
   ];
 
   return (
@@ -6493,411 +3306,932 @@ function AssetsDashboardView({ stats, assets, logs, onNavigate }) {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-[#0f294a]">
-            داشبورد مدیریت اموال و تجهیزات تحویلی
+            مدیریت پرسنل، اعضای تیم و تردد خودرو
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            پایش موجودی اموال مرکز رشد نزد شرکت‌ها، وضعیت تأیید الکترونیکی و مغایرت‌های گزارش‌شده
+            ثبت پرونده پرسنلی کارکنان، قراردادها، شیوه حضور و خودروهای مجاز تردد به مرکز رشد
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => onNavigate('ast_manage')}
-            className="px-4 py-2.5 rounded-xl bg-[#0f294a] hover:bg-blue-800 text-white text-xs font-bold flex items-center gap-1.5"
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <select
+            disabled={Boolean(lockedCompanyId)}
+            value={selectedCompanyId}
+            onChange={(e) => setSelectedCompanyId(e.target.value)}
+            className="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-xs font-bold"
           >
-            <Plus className="w-4 h-4" />
-            <span>ثبت تحویل اموال جدید</span>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                شرکت: {c.name}
+              </option>
+            ))}
+          </select>
+
+          <button
+            onClick={() => setShowSharedVehicleModal(true)}
+            className="px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 text-xs font-bold flex items-center gap-1.5"
+          >
+            <Car className="w-4 h-4 text-blue-600" />
+            <span>خودروهای شرکت ({toPersianDigits(companySharedVehicles.length)})</span>
           </button>
+
           <button
-            onClick={() => onNavigate('ast_minutes')}
-            className="px-4 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-800 text-xs font-bold flex items-center gap-1.5"
+            onClick={() => {
+              setEditingPerson(createEmptyPersonnelRecord(activeCompany));
+              setFormStep(1);
+            }}
+            className="px-4 py-2.5 rounded-xl bg-[#0f294a] hover:bg-blue-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm"
           >
-            <FileSignature className="w-4 h-4 text-blue-600" />
-            <span>صورت‌جلسه تحویل</span>
+            <UserPlus className="w-4 h-4" />
+            <span>ثبت پرسنل جدید</span>
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-        {kpiCards.map((c, i) => (
-          <div key={i} className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-3">
-              <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${c.color}`}>
-                <c.icon className="w-4 h-4" />
-              </div>
-              <span className="text-2xl font-extrabold text-slate-900">{toPersianDigits(c.value)}</span>
-            </div>
-            <span className="text-xs font-semibold text-slate-600">{c.label}</span>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-3">
+        {kpiCards.map((c, idx) => (
+          <div key={idx} className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-sm flex flex-col justify-between">
+            <span className={`text-xl font-extrabold px-2 py-0.5 rounded-lg border self-start mb-2 ${c.color}`}>
+              {toPersianDigits(c.value)}
+            </span>
+            <span className="text-[11px] font-bold text-slate-700 leading-4">{c.label}</span>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-slate-200 flex items-center justify-between">
-            <h3 className="font-bold text-sm text-slate-900">آخرین اقلام تحویلی به شرکت‌ها</h3>
-            <button onClick={() => onNavigate('ast_manage')} className="text-xs text-blue-700 font-semibold hover:underline">
-              مدیریت کامل اموال
-            </button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
-              <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                <tr>
-                  <th className="py-3 px-4">کد اموال</th>
-                  <th className="py-3 px-4">شرکت</th>
-                  <th className="py-3 px-4">نام کالا</th>
-                  <th className="py-3 px-4 text-center">موجودی فعلی</th>
-                  <th className="py-3 px-4">وضعیت تأیید</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {(assets || []).slice(0, 6).map((a) => {
-                  const q = computeAssetQuantities(a);
-                  return (
-                    <tr key={a.id} className="hover:bg-slate-50">
-                      <td className="py-3 px-4 font-mono font-bold text-blue-800">{toPersianDigits(a.assetCode)}</td>
-                      <td className="py-3 px-4 font-semibold">{a.companyName}</td>
-                      <td className="py-3 px-4">{a.itemName}</td>
-                      <td className="py-3 px-4 text-center font-extrabold">{toPersianDigits(q.currentQty)}</td>
-                      <td className="py-3 px-4">
-                        <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800 font-semibold">
-                          {a.deliveryStatus}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+        <div className="relative">
+          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="جست‌وجو نام، کد ملی، سمت..."
+            className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-300"
+          />
         </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-          <h3 className="font-bold text-sm text-slate-900 mb-4 flex items-center gap-2">
-            <History className="w-4 h-4 text-blue-600" />
-            تاریخچه رویدادهای اموال
-          </h3>
-          <div className="space-y-2.5 max-h-72 overflow-y-auto">
-            {(logs || []).slice(0, 8).map((lg) => (
-              <div key={lg.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
-                <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                  <span>{lg.user}</span>
-                  <span dir="ltr">{toPersianDigits(lg.date)}</span>
-                </div>
-                <p className="text-slate-800">{lg.action}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AssetsManagementView({
-  companies,
-  assetsState,
-  setAssetsState,
-  adminUser,
-  onAddAsset,
-  onRecordEvent,
-  onFinalizeAsset,
-  showToast
-}) {
-  const canEditAssets = ['system_admin', 'org_manager', 'expert'].includes(adminUser?.secretariatRole);
-  const [selectedCompanyId, setSelectedCompanyId] = useState(companies[0]?.id || 'comp-1');
-  const [itemName, setItemName] = useState('میز');
-  const [customItemName, setCustomItemName] = useState('');
-  const [category, setCategory] = useState('مبلمان اداری');
-  const [quantity, setQuantity] = useState(1);
-  const [serialNumber, setSerialNumber] = useState('');
-  const [physicalCondition, setPhysicalCondition] = useState('سالم و نو');
-  const [deliveryDate, setDeliveryDate] = useState(getTodayJalali());
-  const [receivedBy, setReceivedBy] = useState('');
-  const [description, setDescription] = useState('');
-  const [sendForConfirm, setSendForConfirm] = useState(true);
-
-  // مودال ثبت رویداد افزایش / کاهش / استرداد / خرابی / اصلاح با دلیل
-  const [eventModalAsset, setEventModalAsset] = useState(null);
-  const [eventType, setEventType] = useState('additional');
-  const [eventQty, setEventQty] = useState(1);
-  const [eventCondition, setEventCondition] = useState('سالم');
-  const [eventReason, setEventReason] = useState('');
-  const [eventSendConfirm, setEventSendConfirm] = useState(true);
-
-  const handleCreateSubmit = (e) => {
-    e.preventDefault();
-    if (!canEditAssets) {
-      showToast('نقش فعلی شما مجوز ثبت مستقیم اموال را ندارد.', 'error');
-      return;
-    }
-    const comp = companies.find((c) => c.id === selectedCompanyId);
-    const finalName = itemName === 'افزودن قلم جدید...' ? customItemName.trim() : itemName;
-    if (!comp || !finalName) {
-      showToast('انتخاب شرکت و نام قلم الزامی است.', 'error');
-      return;
-    }
-
-    if (itemName === 'افزودن قلم جدید...' && customItemName.trim()) {
-      setAssetsState((prev) => ({
-        ...prev,
-        catalog: [...prev.catalog, { id: 'cat-' + Date.now(), name: customItemName.trim(), category }]
-      }));
-    }
-
-    onAddAsset({
-      companyId: comp.id,
-      companyName: comp.name,
-      itemName: finalName,
-      category,
-      quantity,
-      serialNumber,
-      physicalCondition,
-      deliveryDate,
-      receivedBy: receivedBy || comp.ceoName || '',
-      description,
-      sendForConfirm
-    });
-
-    setSerialNumber('');
-    setDescription('');
-    setQuantity(1);
-  };
-
-  const handleEventSubmit = (e) => {
-    e.preventDefault();
-    if (!eventReason.trim()) {
-      showToast('ثبت دلیل تغییر اموال برای حفظ سوابق الزامی است.', 'error');
-      return;
-    }
-    onRecordEvent(eventModalAsset.id, {
-      type: eventType,
-      quantity: eventQty,
-      condition: eventCondition,
-      reason: eventReason,
-      sendForConfirm: eventSendConfirm
-    });
-    setEventModalAsset(null);
-    setEventReason('');
-  };
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div>
-        <h1 className="text-xl font-extrabold text-[#0f294a]">ثبت و مدیریت اموال تحویلی به شرکت‌ها</h1>
-        <p className="text-xs text-slate-500 mt-1">
-          ثبت تحویل اولیه اقلام و اعمال رویدادهای افزایش، کاهش، استرداد، خرابی و اصلاح با حفظ کامل سوابق
-        </p>
+        <select value={filterContract} onChange={(e) => setFilterContract(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+          <option value="همه">نوع قرارداد: همه</option>
+          {HR_CONTRACT_TYPES.map((ct) => <option key={ct} value={ct}>{ct}</option>)}
+        </select>
+        <select value={filterAttendance} onChange={(e) => setFilterAttendance(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+          <option value="همه">وضعیت حضور: همه</option>
+          {HR_ATTENDANCE_MODES.map((am) => <option key={am} value={am}>{am}</option>)}
+        </select>
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+          <option value="همه">وضعیت همکاری: همه</option>
+          {HR_COOPERATION_STATUSES.map((st) => <option key={st} value={st}>{st}</option>)}
+        </select>
+        <input
+          type="text"
+          value={filterRole}
+          onChange={(e) => setFilterRole(e.target.value)}
+          placeholder="فیلتر جایگاه شغلی..."
+          className="px-3 py-2 rounded-xl border border-slate-300"
+        />
       </div>
 
-      {/* فرم ثبت تحویل جدید */}
-      {canEditAssets && (
-        <form onSubmit={handleCreateSubmit} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4 text-xs">
-          <h3 className="font-bold text-sm text-slate-900">ثبت تحویل قلم جدید به شرکت</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block font-bold mb-1">شرکت دریافت‌کننده *</label>
-              <select
-                value={selectedCompanyId}
-                onChange={(e) => setSelectedCompanyId(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-              >
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block font-bold mb-1">نام قلم / کالا *</label>
-              <select
-                value={itemName}
-                onChange={(e) => setItemName(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-              >
-                {(assetsState.catalog || DEFAULT_ASSET_CATALOG).map((cat) => (
-                  <option key={cat.id} value={cat.name}>
-                    {cat.name}
-                  </option>
-                ))}
-                <option value="افزودن قلم جدید...">افزودن قلم جدید...</option>
-              </select>
-            </div>
-            {itemName === 'افزودن قلم جدید...' && (
-              <div>
-                <label className="block font-bold mb-1">عنوان قلم جدید *</label>
-                <input
-                  type="text"
-                  value={customItemName}
-                  onChange={(e) => setCustomItemName(e.target.value)}
-                  placeholder="مثلاً: قفسه فلزی بایگانی"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                />
-              </div>
-            )}
-            <div>
-              <label className="block font-bold mb-1">گروه کالا</label>
-              <input
-                type="text"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300"
-              />
-            </div>
-            <div>
-              <label className="block font-bold mb-1">تعداد تحویلی *</label>
-              <input
-                type="number"
-                min="1"
-                value={quantity}
-                onChange={(e) => setQuantity(Number(e.target.value))}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300"
-              />
-            </div>
-            <div>
-              <label className="block font-bold mb-1">شماره سریال / برچسب اموال</label>
-              <input
-                type="text"
-                dir="ltr"
-                value={serialNumber}
-                onChange={(e) => setSerialNumber(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300"
-              />
-            </div>
-            <div>
-              <label className="block font-bold mb-1">وضعیت ظاهری و فیزیکی</label>
-              <select
-                value={physicalCondition}
-                onChange={(e) => setPhysicalCondition(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-              >
-                <option value="سالم و نو">سالم و نو</option>
-                <option value="سالم (در حد نو)">سالم (در حد نو)</option>
-                <option value="دارای خط و خش جزئی">دارای خط و خش جزئی</option>
-                <option value="نیازمند تعمیر">نیازمند تعمیر</option>
-              </select>
-            </div>
-            <div>
-              <label className="block font-bold mb-1">تاریخ تحویل (شمسی)</label>
-              <input
-                type="text"
-                dir="ltr"
-                value={deliveryDate}
-                onChange={(e) => setDeliveryDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300"
-              />
-            </div>
-            <div>
-              <label className="block font-bold mb-1">نام تحویل‌گیرنده از طرف شرکت</label>
-              <input
-                type="text"
-                value={receivedBy}
-                onChange={(e) => setReceivedBy(e.target.value)}
-                placeholder="پیش‌فرض: مدیرعامل شرکت"
-                className="w-full px-3 py-2 rounded-xl border border-slate-300"
-              />
-            </div>
-            <div className="sm:col-span-2 lg:col-span-3">
-              <label className="block font-bold mb-1">توضیحات تکمیلی کالا</label>
-              <input
-                type="text"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-            <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700">
-              <input
-                type="checkbox"
-                checked={sendForConfirm}
-                onChange={(e) => setSendForConfirm(e.target.checked)}
-              />
-              <span>ارسال هم‌زمان به کارتابل شرکت جهت تأیید الکترونیکی</span>
-            </label>
-            <button type="submit" className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
-              ثبت قلم در پرونده اموال شرکت
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* جدول جامع اقلام تحویلی و دکمه‌های ثبت تغییر تعداد */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs">
             <thead className="bg-slate-50 text-slate-700 border-b border-slate-200">
               <tr>
-                <th className="py-3.5 px-4">کد و کالا</th>
-                <th className="py-3.5 px-4">شرکت</th>
-                <th className="py-3.5 px-4 text-center">اولیه</th>
-                <th className="py-3.5 px-4 text-center">اضافه‌شده</th>
-                <th className="py-3.5 px-4 text-center">مستردشده</th>
-                <th className="py-3.5 px-4 text-center">موجودی فعلی</th>
-                <th className="py-3.5 px-4">وضعیت تأیید / مغایرت</th>
-                <th className="py-3.5 px-4 text-center">عملیات تغییر / نهایی‌سازی</th>
+                <th className="py-3.5 px-3">ردیف</th>
+                <th className="py-3.5 px-3">نام و نام خانوادگی</th>
+                <th className="py-3.5 px-3">شماره ملی (ماسک‌شده)</th>
+                <th className="py-3.5 px-3">جایگاه شغلی</th>
+                <th className="py-3.5 px-3">نوع قرارداد</th>
+                <th className="py-3.5 px-3">وضعیت حضور</th>
+                <th className="py-3.5 px-3">وضعیت همکاری</th>
+                <th className="py-3.5 px-3">تأیید مرکز رشد</th>
+                <th className="py-3.5 px-3">شروع همکاری</th>
+                <th className="py-3.5 px-3 text-center">عملیات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {(assetsState.items || []).map((asset) => {
-                const q = computeAssetQuantities(asset);
-                return (
-                  <tr key={asset.id} className="hover:bg-slate-50">
-                    <td className="py-3.5 px-4">
-                      <div className="font-bold text-slate-900">{asset.itemName}</div>
-                      <div className="text-[11px] font-mono text-slate-500">{toPersianDigits(asset.assetCode)}</div>
+              {filteredPersonnel.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-10 text-center text-slate-400">
+                    هیچ پرسنلی با این مشخصات یافت نشد.
+                  </td>
+                </tr>
+              ) : (
+                filteredPersonnel.map((person, idx) => (
+                  <tr key={person.id} className="hover:bg-slate-50">
+                    <td className="py-3.5 px-3">{toPersianDigits(idx + 1)}</td>
+                    <td className="py-3.5 px-3 font-bold text-slate-900">
+                      {person.firstName} {person.lastName}
                     </td>
-                    <td className="py-3.5 px-4 font-semibold">{asset.companyName}</td>
-                    <td className="py-3.5 px-4 text-center">{toPersianDigits(q.initialQty)}</td>
-                    <td className="py-3.5 px-4 text-center text-emerald-700">+{toPersianDigits(q.addedQty)}</td>
-                    <td className="py-3.5 px-4 text-center text-rose-700">-{toPersianDigits(q.returnedQty)}</td>
-                    <td className="py-3.5 px-4 text-center">
-                      <span className="px-2.5 py-0.5 rounded-lg bg-blue-100 text-blue-900 font-extrabold">
-                        {toPersianDigits(q.currentQty)}
+                    <td className="py-3.5 px-3 font-mono text-slate-600" dir="ltr">
+                      {toPersianDigits(maskNationalId(person.nationalId))}
+                    </td>
+                    <td className="py-3.5 px-3">
+                      <div>{person.jobTitle}</div>
+                      <span className="text-[11px] text-slate-400">{person.orgUnit}</span>
+                    </td>
+                    <td className="py-3.5 px-3">
+                      <div>{person.contractType}</div>
+                      <span className="text-[11px] text-slate-400">{person.cooperationType}</span>
+                    </td>
+                    <td className="py-3.5 px-3">{person.attendanceMode}</td>
+                    <td className="py-3.5 px-3">
+                      <span
+                        className={`px-2 py-0.5 rounded-full font-semibold ${
+                          person.cooperationStatus === 'فعال'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {person.cooperationStatus}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4">
+                    <td className="py-3.5 px-3">
                       <span
-                        className={`px-2.5 py-0.5 rounded-full font-semibold ${
-                          asset.deliveryStatus === 'دارای مغایرت'
+                        className={`px-2 py-0.5 rounded-full font-semibold ${
+                          person.reviewStatus === 'تأییدشده'
+                            ? 'bg-blue-100 text-blue-800'
+                            : person.reviewStatus === 'نیازمند اصلاح'
                             ? 'bg-rose-100 text-rose-800'
-                            : asset.deliveryStatus === 'نهایی‌شده' || asset.deliveryStatus === 'تأییدشده توسط شرکت'
-                            ? 'bg-emerald-100 text-emerald-800'
                             : 'bg-amber-100 text-amber-900'
                         }`}
                       >
-                        {asset.deliveryStatus}
+                        {person.reviewStatus}
                       </span>
-                      {asset.discrepancyNote && (
-                        <p className="text-[11px] text-rose-700 mt-1 max-w-xs">{asset.discrepancyNote}</p>
+                      {person.returnNote && (
+                        <p className="text-[10px] text-rose-700 mt-1 max-w-[140px]">{person.returnNote}</p>
                       )}
                     </td>
-                    <td className="py-3.5 px-4 text-center">
-                      {canEditAssets && (
-                        <div className="flex justify-center gap-1.5">
+                    <td className="py-3.5 px-3">{toPersianDigits(person.startDate)}</td>
+                    <td className="py-3.5 px-3">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => setViewingPerson(person)}
+                          title="مشاهده پرونده کامل فرد"
+                          className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingPerson(JSON.parse(JSON.stringify(person)));
+                            setFormStep(1);
+                          }}
+                          title="ویرایش اطلاعات"
+                          className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        {person.cooperationStatus === 'فعال' ? (
                           <button
                             onClick={() => {
-                              setEventModalAsset(asset);
-                              setEventType('additional');
-                              setEventQty(1);
-                              setEventCondition(asset.physicalCondition);
+                              setExitModalPerson(person);
+                              setExitDate(getTodayJalali());
+                              setExitReason('');
                             }}
-                            className="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-800 hover:bg-blue-100 font-semibold flex items-center gap-1"
+                            title="ثبت خروج فرد از شرکت"
+                            className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50"
                           >
-                            <ArrowUpDown className="w-3.5 h-3.5" />
-                            <span>تغییر تعداد / رویداد</span>
+                            <UserMinus className="w-4 h-4" />
                           </button>
-                          {asset.deliveryStatus === 'تأییدشده توسط شرکت' && (
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setRehireModalPerson(person);
+                              setRehireStartDate(getTodayJalali());
+                            }}
+                            title="ثبت دوره همکاری جدید"
+                            className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* مودال ۵ مرحله‌ای ثبت / ویرایش پرونده پرسنل */}
+      {editingPerson && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto text-xs">
+            <div className="p-5 bg-[#0b1f3a] text-white flex items-center justify-between">
+              <h3 className="font-extrabold text-base">
+                {editingPerson.id
+                  ? `ویرایش پرونده پرسنلی: ${editingPerson.firstName} ${editingPerson.lastName}`
+                  : `ثبت عضو جدید در تیم ${activeCompany.name}`}
+              </h3>
+              <button onClick={() => setEditingPerson(null)} className="text-slate-300 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex overflow-x-auto border-b border-slate-200 bg-slate-100 px-4 pt-2 gap-1.5">
+              {[
+                { id: 1, label: '۱. اطلاعات هویتی' },
+                { id: 2, label: '۲. شغلی و قرارداد' },
+                { id: 3, label: '۳. وضعیت حضور و استقرار' },
+                { id: 4, label: '۴. خودرو و تردد' },
+                { id: 5, label: '۵. مدارک و مستندات' }
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setFormStep(st.id)}
+                  className={`px-3.5 py-2 rounded-t-xl font-bold whitespace-nowrap ${
+                    formStep === st.id
+                      ? 'bg-white text-[#0f294a] border-t border-x border-slate-200'
+                      : 'text-slate-600'
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="p-6 max-h-[70vh] overflow-y-auto space-y-4">
+              {formStep === 1 && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block font-bold mb-1">نام *</label>
+                    <input type="text" value={editingPerson.firstName} onChange={(e) => setEditingPerson({ ...editingPerson, firstName: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">نام خانوادگی *</label>
+                    <input type="text" value={editingPerson.lastName} onChange={(e) => setEditingPerson({ ...editingPerson, lastName: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">نام پدر</label>
+                    <input type="text" value={editingPerson.fatherName} onChange={(e) => setEditingPerson({ ...editingPerson, fatherName: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">شماره ملی (شناسه یکتا ۱۰ رقمی) *</label>
+                    <input type="text" dir="ltr" value={editingPerson.nationalId} onChange={(e) => setEditingPerson({ ...editingPerson, nationalId: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">تاریخ تولد (شمسی)</label>
+                    <input type="text" dir="ltr" placeholder="1370/05/12" value={editingPerson.birthDate} onChange={(e) => setEditingPerson({ ...editingPerson, birthDate: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">شماره تلفن همراه</label>
+                    <input type="text" dir="ltr" value={editingPerson.mobile} onChange={(e) => setEditingPerson({ ...editingPerson, mobile: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">ایمیل</label>
+                    <input type="email" dir="ltr" value={editingPerson.email} onChange={(e) => setEditingPerson({ ...editingPerson, email: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">جنسیت</label>
+                    <select value={editingPerson.gender} onChange={(e) => setEditingPerson({ ...editingPerson, gender: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white">
+                      <option value="مرد">مرد</option>
+                      <option value="زن">زن</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">تصویر پرسنلی (اختیاری)</label>
+                    <input type="file" accept="image/*" onChange={(e) => handleFileAttach(e.target.files?.[0], (f) => setEditingPerson({ ...editingPerson, avatarUrl: f.dataUrl }))} className="text-[11px]" />
+                  </div>
+                </div>
+              )}
+
+              {formStep === 2 && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block font-bold mb-1">عنوان شغلی / جایگاه سازمانی *</label>
+                    <input type="text" value={editingPerson.jobTitle} onChange={(e) => setEditingPerson({ ...editingPerson, jobTitle: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">واحد سازمانی</label>
+                    <select value={editingPerson.orgUnit} onChange={(e) => setEditingPerson({ ...editingPerson, orgUnit: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white">
+                      {HR_ORG_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">تخصص و حوزه فعالیت</label>
+                    <input type="text" value={editingPerson.specialty} onChange={(e) => setEditingPerson({ ...editingPerson, specialty: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">مدرک تحصیلی</label>
+                    <select value={editingPerson.degree} onChange={(e) => setEditingPerson({ ...editingPerson, degree: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white">
+                      <option value="دیپلم و کاردانی">دیپلم و کاردانی</option>
+                      <option value="کارشناسی">کارشناسی</option>
+                      <option value="کارشناسی ارشد">کارشناسی ارشد</option>
+                      <option value="دکتری تخصصی">دکتری تخصصی</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">رشته تحصیلی</label>
+                    <input type="text" value={editingPerson.major} onChange={(e) => setEditingPerson({ ...editingPerson, major: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">سابقه کاری مرتبط (سال)</label>
+                    <input type="number" min="0" value={editingPerson.experienceYears} onChange={(e) => setEditingPerson({ ...editingPerson, experienceYears: Number(e.target.value) })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">نوع همکاری</label>
+                    <select value={editingPerson.cooperationType} onChange={(e) => setEditingPerson({ ...editingPerson, cooperationType: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white">
+                      {HR_COOPERATION_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">نوع قرارداد</label>
+                    <select value={editingPerson.contractType} onChange={(e) => setEditingPerson({ ...editingPerson, contractType: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white">
+                      {HR_CONTRACT_TYPES.map((ct) => <option key={ct} value={ct}>{ct}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">مدت قرارداد</label>
+                    <input type="text" value={editingPerson.contractDuration} onChange={(e) => setEditingPerson({ ...editingPerson, contractDuration: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">تاریخ شروع همکاری</label>
+                    <input type="text" dir="ltr" value={editingPerson.startDate} onChange={(e) => setEditingPerson({ ...editingPerson, startDate: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">تاریخ شروع قرارداد</label>
+                    <input type="text" dir="ltr" value={editingPerson.contractStartDate} onChange={(e) => setEditingPerson({ ...editingPerson, contractStartDate: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">تاریخ پایان قرارداد</label>
+                    <input type="text" dir="ltr" value={editingPerson.contractEndDate} onChange={(e) => setEditingPerson({ ...editingPerson, contractEndDate: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                </div>
+              )}
+
+              {formStep === 3 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-bold mb-1">شیوه حضور و فعالیت</label>
+                    <select value={editingPerson.attendanceMode} onChange={(e) => setEditingPerson({ ...editingPerson, attendanceMode: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white">
+                      {HR_ATTENDANCE_MODES.map((am) => <option key={am} value={am}>{am}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">محل فعالیت فرد</label>
+                    <select value={editingPerson.workLocation} onChange={(e) => setEditingPerson({ ...editingPerson, workLocation: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white">
+                      {HR_WORK_LOCATIONS.map((wl) => <option key={wl} value={wl}>{wl}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">تعداد روزهای حضور در هفته</label>
+                    <input type="number" min="0" max="7" value={editingPerson.weeklyPresenceDays} onChange={(e) => setEditingPerson({ ...editingPerson, weeklyPresenceDays: Number(e.target.value) })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">ساعات کاری معمول</label>
+                    <input type="text" value={editingPerson.workingHours} onChange={(e) => setEditingPerson({ ...editingPerson, workingHours: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold mb-1">روزهای حضور در مرکز رشد</label>
+                    <input type="text" value={editingPerson.presenceDaysOfWeek} onChange={(e) => setEditingPerson({ ...editingPerson, presenceDaysOfWeek: e.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold mb-1">توضیحات مربوط به نحوه فعالیت</label>
+                    <textarea rows={2} value={editingPerson.activityNotes} onChange={(e) => setEditingPerson({ ...editingPerson, activityNotes: e.target.value })} className="w-full p-2.5 rounded-xl border border-slate-300" />
+                  </div>
+                </div>
+              )}
+
+              {formStep === 4 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                    <label className="flex items-center gap-2 font-bold cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editingPerson.hasVehicle}
+                        onChange={(e) => setEditingPerson({ ...editingPerson, hasVehicle: e.target.checked })}
+                      />
+                      <span>فرد برای رفت‌وآمد به مرکز رشد از خودرو استفاده می‌کند</span>
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingPerson({
+                          ...editingPerson,
+                          hasVehicle: true,
+                          vehicles: [
+                            ...(editingPerson.vehicles || []),
+                            { id: 'veh-' + Date.now(), vehicleType: 'سواری', brandModel: '', color: '', plateNumber: '', ownerType: 'شخصی', notes: '' }
+                          ]
+                        })
+                      }
+                      className="px-3 py-1.5 rounded-xl bg-blue-600 text-white font-bold flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>افزودن خودروی فرد</span>
+                    </button>
+                  </div>
+
+                  {(editingPerson.vehicles || []).map((v, idx) => (
+                    <div key={v.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 relative">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingPerson({
+                            ...editingPerson,
+                            vehicles: editingPerson.vehicles.filter((_, i) => i !== idx)
+                          })
+                        }
+                        className="absolute top-2 left-2 text-rose-600"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <div>
+                        <label className="block font-bold mb-1">نوع خودرو</label>
+                        <select
+                          value={v.vehicleType}
+                          onChange={(e) => {
+                            const next = [...editingPerson.vehicles];
+                            next[idx] = { ...v, vehicleType: e.target.value };
+                            setEditingPerson({ ...editingPerson, vehicles: next });
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white"
+                        >
+                          <option value="سواری">سواری</option>
+                          <option value="وانت / باری سبک">وانت / باری سبک</option>
+                          <option value="موتورسیکلت">موتورسیکلت</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block font-bold mb-1">شرکت سازنده و مدل خودرو</label>
+                        <input
+                          type="text"
+                          value={v.brandModel}
+                          onChange={(e) => {
+                            const next = [...editingPerson.vehicles];
+                            next[idx] = { ...v, brandModel: e.target.value };
+                            setEditingPerson({ ...editingPerson, vehicles: next });
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold mb-1">رنگ خودرو</label>
+                        <input
+                          type="text"
+                          value={v.color}
+                          onChange={(e) => {
+                            const next = [...editingPerson.vehicles];
+                            next[idx] = { ...v, color: e.target.value };
+                            setEditingPerson({ ...editingPerson, vehicles: next });
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold mb-1">شماره پلاک</label>
+                        <input
+                          type="text"
+                          value={v.plateNumber}
+                          onChange={(e) => {
+                            const next = [...editingPerson.vehicles];
+                            next[idx] = { ...v, plateNumber: e.target.value };
+                            setEditingPerson({ ...editingPerson, vehicles: next });
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold mb-1">مالک خودرو</label>
+                        <select
+                          value={v.ownerType}
+                          onChange={(e) => {
+                            const next = [...editingPerson.vehicles];
+                            next[idx] = { ...v, ownerType: e.target.value };
+                            setEditingPerson({ ...editingPerson, vehicles: next });
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white"
+                        >
+                          <option value="شخصی">شخصی</option>
+                          <option value="متعلق به شرکت">متعلق به شرکت</option>
+                          <option value="سازمانی / اجاره‌ای">سازمانی / اجاره‌ای</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block font-bold mb-1">توضیحات تکمیلی</label>
+                        <input
+                          type="text"
+                          value={v.notes}
+                          onChange={(e) => {
+                            const next = [...editingPerson.vehicles];
+                            next[idx] = { ...v, notes: e.target.value };
+                            setEditingPerson({ ...editingPerson, vehicles: next });
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white"
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  {companySharedVehicles.length > 0 && (
+                    <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200 space-y-2">
+                      <span className="font-bold text-blue-950 block">
+                        انتخاب از خودروهای مشترک ثبت‌شده برای شرکت (بدون ثبت مجدد):
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {companySharedVehicles.map((cv) => {
+                          const checked = (editingPerson.sharedCompanyVehicleIds || []).includes(cv.id);
+                          return (
+                            <label key={cv.id} className="px-3 py-1.5 rounded-xl bg-white border border-blue-200 flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  const prevIds = editingPerson.sharedCompanyVehicleIds || [];
+                                  const nextIds = e.target.checked
+                                    ? [...prevIds, cv.id]
+                                    : prevIds.filter((id) => id !== cv.id);
+                                  setEditingPerson({
+                                    ...editingPerson,
+                                    hasVehicle: nextIds.length > 0 || (editingPerson.vehicles?.length || 0) > 0,
+                                    sharedCompanyVehicleIds: nextIds
+                                  });
+                                }}
+                              />
+                              <span>{cv.brandModel} ({toPersianDigits(cv.plateNumber)})</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {formStep === 5 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {[
+                    { key: 'contractFile', label: 'تصویر قرارداد همکاری' },
+                    { key: 'resumeFile', label: 'رزومه یا سوابق کاری' },
+                    { key: 'educationFile', label: 'مدارک تحصیلی (اختیاری)' },
+                    { key: 'nationalCardFile', label: 'تصویر کارت ملی (اختیاری)' },
+                    { key: 'otherFile', label: 'سایر مستندات' }
+                  ].map((doc) => {
+                    const f = editingPerson.documents?.[doc.key];
+                    return (
+                      <div key={doc.key} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                        <span className="font-bold block">{doc.label}</span>
+                        {f ? (
+                          <div className="flex justify-between items-center bg-white px-2.5 py-1 rounded border border-emerald-200">
+                            <span className="text-emerald-800 font-semibold truncate">{f.name}</span>
                             <button
-                              onClick={() => onFinalizeAsset(asset.id)}
-                              className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold"
+                              type="button"
+                              onClick={() =>
+                                setEditingPerson({
+                                  ...editingPerson,
+                                  documents: { ...editingPerson.documents, [doc.key]: null }
+                                })
+                              }
+                              className="text-rose-600"
                             >
-                              نهایی‌سازی
+                              <X className="w-4 h-4" />
                             </button>
-                          )}
+                          </div>
+                        ) : (
+                          <input
+                            type="file"
+                            accept=".pdf,.doc,.docx,image/*"
+                            onChange={(e) =>
+                              handleFileAttach(e.target.files?.[0], (uploaded) =>
+                                setEditingPerson({
+                                  ...editingPerson,
+                                  documents: { ...editingPerson.documents, [doc.key]: uploaded }
+                                })
+                              )
+                            }
+                            className="text-[11px]"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              {!editingPerson.id ? (
+                <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={quickAddAnother}
+                    onChange={(e) => setQuickAddAnother(e.target.checked)}
+                  />
+                  <span>افزودن سریع نفر بعدی بلافاصله پس از ثبت</span>
+                </label>
+              ) : (
+                <span />
+              )}
+
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setEditingPerson(null)} className="px-4 py-2 rounded-xl border border-slate-300 font-semibold">
+                  انصراف
+                </button>
+                <button type="button" onClick={() => handleSaveForm(false)} className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold">
+                  ذخیره پیش‌نویس
+                </button>
+                <button type="button" onClick={() => handleSaveForm(true)} className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
+                  ثبت و ارسال به مرکز رشد
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* مودال مشاهده پرونده کامل فرد */}
+      {viewingPerson && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 text-xs my-auto">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h4 className="font-extrabold text-base text-[#0f294a]">
+                پرونده پرسنلی: {viewingPerson.firstName} {viewingPerson.lastName}
+              </h4>
+              <button onClick={() => setViewingPerson(null)}>
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl">
+              <div>نام پدر: <b>{viewingPerson.fatherName || '—'}</b></div>
+              <div>شماره ملی: <b dir="ltr">{toPersianDigits(viewingPerson.nationalId)}</b></div>
+              <div>موبایل: <b dir="ltr">{toPersianDigits(viewingPerson.mobile)}</b></div>
+              <div>جایگاه شغلی: <b>{viewingPerson.jobTitle}</b></div>
+              <div>واحد سازمانی: <b>{viewingPerson.orgUnit}</b></div>
+              <div>تحصیلات: <b>{viewingPerson.degree} ({viewingPerson.major})</b></div>
+              <div>نوع همکاری: <b>{viewingPerson.cooperationType}</b></div>
+              <div>نوع قرارداد: <b>{viewingPerson.contractType}</b></div>
+              <div>وضعیت حضور: <b>{viewingPerson.attendanceMode}</b></div>
+            </div>
+            <div>
+              <span className="font-bold block mb-2">تاریخچه تغییرات و سوابق همکاری:</span>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {(viewingPerson.history || []).map((h) => (
+                  <div key={h.id} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex justify-between">
+                    <span>{h.action} ({h.user})</span>
+                    <span dir="ltr" className="text-slate-400">{toPersianDigits(h.date)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* مودال ثبت خروج فرد */}
+      {exitModalPerson && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
+            <h4 className="font-extrabold text-sm text-rose-800">
+              ثبت خاتمه همکاری: {exitModalPerson.firstName} {exitModalPerson.lastName}
+            </h4>
+            <p className="text-slate-600">
+              اطلاعات و سوابق قبلی فرد حذف نخواهد شد و وضعیت همکاری به «خاتمه همکاری» تغییر می‌یابد.
+            </p>
+            <div>
+              <label className="block font-bold mb-1">تاریخ پایان همکاری (شمسی)</label>
+              <input type="text" dir="ltr" value={exitDate} onChange={(e) => setExitDate(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+            </div>
+            <div>
+              <label className="block font-bold mb-1">علت خاتمه همکاری (اختیاری)</label>
+              <input type="text" value={exitReason} onChange={(e) => setExitReason(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setExitModalPerson(null)} className="px-4 py-2 rounded-xl border">انصراف</button>
+              <button
+                onClick={() => {
+                  onStatusTransition(exitModalPerson.id, 'exit', { exitDate, exitReason });
+                  setExitModalPerson(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 text-white font-bold"
+              >
+                تأیید ثبت خروج
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* مودال بازگشت مجدد به همکاری */}
+      {rehireModalPerson && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
+            <h4 className="font-extrabold text-sm text-emerald-900">
+              ثبت دوره همکاری جدید: {rehireModalPerson.firstName} {rehireModalPerson.lastName}
+            </h4>
+            <div>
+              <label className="block font-bold mb-1">تاریخ شروع دوره جدید</label>
+              <input type="text" dir="ltr" value={rehireStartDate} onChange={(e) => setRehireStartDate(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+            </div>
+            <div>
+              <label className="block font-bold mb-1">نوع قرارداد جدید</label>
+              <select value={rehireContractType} onChange={(e) => setRehireContractType(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white">
+                {HR_CONTRACT_TYPES.map((ct) => <option key={ct} value={ct}>{ct}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block font-bold mb-1">تاریخ پایان قرارداد جدید</label>
+              <input type="text" dir="ltr" value={rehireContractEnd} onChange={(e) => setRehireContractEnd(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-300" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setRehireModalPerson(null)} className="px-4 py-2 rounded-xl border">انصراف</button>
+              <button
+                onClick={() => {
+                  onStatusTransition(rehireModalPerson.id, 'rehire', {
+                    newStartDate: rehireStartDate,
+                    contractType: rehireContractType,
+                    contractEndDate: rehireContractEnd
+                  });
+                  setRehireModalPerson(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold"
+              >
+                فعال‌سازی دوره جدید
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* مودال خودروهای متعلق به شرکت */}
+      {showSharedVehicleModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h4 className="font-extrabold text-sm text-[#0f294a]">
+                خودروهای سازمانی متعلق به شرکت ({activeCompany.name})
+              </h4>
+              <button onClick={() => setShowSharedVehicleModal(false)}>
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddCompanySharedVehicle} className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl">
+              <input
+                type="text"
+                placeholder="مدل خودرو (مثلاً: پژو ۲۰۷)"
+                value={newCompanyVeh.brandModel}
+                onChange={(e) => setNewCompanyVeh({ ...newCompanyVeh, brandModel: e.target.value })}
+                className="px-3 py-2 rounded-lg border border-slate-300 bg-white"
+              />
+              <input
+                type="text"
+                placeholder="شماره پلاک"
+                value={newCompanyVeh.plateNumber}
+                onChange={(e) => setNewCompanyVeh({ ...newCompanyVeh, plateNumber: e.target.value })}
+                className="px-3 py-2 rounded-lg border border-slate-300 bg-white"
+              />
+              <button type="submit" className="px-4 py-2 rounded-lg bg-blue-600 text-white font-bold">
+                افزودن خودروی شرکت
+              </button>
+            </form>
+
+            <div className="space-y-2 max-h-52 overflow-y-auto">
+              {companySharedVehicles.map((cv) => (
+                <div key={cv.id} className="p-3 rounded-xl border border-slate-200 flex justify-between items-center">
+                  <span><b>{cv.brandModel}</b> ({cv.ownerType})</span>
+                  <span className="font-mono font-bold text-blue-900">{toPersianDigits(cv.plateNumber)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CenterHRManagementView({ companies, hrState, adminUser, onReviewPersonnel, showToast }) {
+  const canReview = ['system_admin', 'org_manager', 'expert'].includes(adminUser?.secretariatRole);
+  const canSeeSensitive = ['system_admin', 'org_manager', 'expert'].includes(adminUser?.secretariatRole);
+  const [selectedCompanyFilter, setSelectedCompanyFilter] = useState('همه');
+  const [statusFilter, setStatusFilter] = useState('همه');
+  const [returnModalId, setReturnModalId] = useState(null);
+  const [returnNoteText, setReturnNoteText] = useState('');
+
+  const filteredList = (hrState.personnel || []).filter((p) => {
+    if (selectedCompanyFilter !== 'همه' && p.companyId !== selectedCompanyFilter) return false;
+    if (statusFilter !== 'همه' && p.reviewStatus !== statusFilter) return false;
+    return true;
+  });
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      <div>
+        <h1 className="text-xl sm:text-2xl font-extrabold text-[#0f294a]">
+          کارتابل مدیریت نیروی انسانی شرکت‌های عضو مرکز رشد
+        </h1>
+        <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          بررسی پرونده کارکنان هر شرکت، کنترل تردد خودروها، تأیید نهایی یا درخواست اصلاح
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+        {companies.map((c) => {
+          const count = (hrState.personnel || []).filter(
+            (p) => p.companyId === c.id && p.cooperationStatus === 'فعال'
+          ).length;
+          return (
+            <div
+              key={c.id}
+              onClick={() => setSelectedCompanyFilter(selectedCompanyFilter === c.id ? 'همه' : c.id)}
+              className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                selectedCompanyFilter === c.id
+                  ? 'bg-blue-50 border-blue-400'
+                  : 'bg-white border-slate-200 hover:border-blue-200'
+              }`}
+            >
+              <div className="font-bold text-slate-900 truncate">{c.name}</div>
+              <div className="text-slate-500 mt-1">
+                پرسنل فعال ثبت‌شده: <b className="text-blue-800">{toPersianDigits(count)} نفر</b>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="bg-white rounded-2xl p-4 border border-slate-200 flex flex-wrap gap-3 text-xs">
+        <select value={selectedCompanyFilter} onChange={(e) => setSelectedCompanyFilter(e.target.value)} className="px-3.5 py-2 rounded-xl border border-slate-300 bg-slate-50">
+          <option value="همه">همه شرکت‌های عضو</option>
+          {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-3.5 py-2 rounded-xl border border-slate-300 bg-slate-50">
+          <option value="همه">همه وضعیت‌های بررسی</option>
+          <option value="ارسال‌شده">ارسال‌شده (منتظر تأیید)</option>
+          <option value="تأییدشده">تأییدشده</option>
+          <option value="نیازمند اصلاح">نیازمند اصلاح</option>
+          <option value="پیش‌نویس">پیش‌نویس</option>
+        </select>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-right text-xs">
+            <thead className="bg-slate-50 text-slate-700 border-b border-slate-200">
+              <tr>
+                <th className="py-3.5 px-3">شرکت</th>
+                <th className="py-3.5 px-3">نام و نام خانوادگی</th>
+                <th className="py-3.5 px-3">شماره ملی / تماس</th>
+                <th className="py-3.5 px-3">سمت و قرارداد</th>
+                <th className="py-3.5 px-3">وضعیت حضور</th>
+                <th className="py-3.5 px-3">پلاک خودرو</th>
+                <th className="py-3.5 px-3">وضعیت پرونده</th>
+                <th className="py-3.5 px-3 text-center">اقدام کارشناسی</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredList.map((p) => {
+                const plates = (p.vehicles || []).map((v) => v.plateNumber).filter(Boolean).join('، ');
+                return (
+                  <tr key={p.id} className="hover:bg-slate-50">
+                    <td className="py-3.5 px-3 font-bold text-slate-800">{p.companyName}</td>
+                    <td className="py-3.5 px-3 font-bold text-slate-900">
+                      {p.firstName} {p.lastName}
+                    </td>
+                    <td className="py-3.5 px-3 font-mono" dir="ltr">
+                      <div>{canSeeSensitive ? toPersianDigits(p.nationalId) : toPersianDigits(maskNationalId(p.nationalId))}</div>
+                      {canSeeSensitive && <span className="text-[11px] text-slate-400">{toPersianDigits(p.mobile)}</span>}
+                    </td>
+                    <td className="py-3.5 px-3">
+                      <div>{p.jobTitle}</div>
+                      <span className="text-[11px] text-slate-400">{p.contractType}</span>
+                    </td>
+                    <td className="py-3.5 px-3">{p.attendanceMode}</td>
+                    <td className="py-3.5 px-3 font-mono">{toPersianDigits(plates) || '—'}</td>
+                    <td className="py-3.5 px-3">
+                      <span
+                        className={`px-2 py-0.5 rounded-full font-semibold ${
+                          p.reviewStatus === 'تأییدشده'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : p.reviewStatus === 'نیازمند اصلاح'
+                            ? 'bg-rose-100 text-rose-800'
+                            : 'bg-amber-100 text-amber-900'
+                        }`}
+                      >
+                        {p.reviewStatus}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-3 text-center">
+                      {canReview && (
+                        <div className="flex justify-center gap-1.5">
+                          <button
+                            onClick={() => onReviewPersonnel(p.id, 'approve')}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                          >
+                            تأیید
+                          </button>
+                          <button
+                            onClick={() => {
+                              setReturnModalId(p.id);
+                              setReturnNoteText('');
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 font-bold"
+                          >
+                            عودت اصلاح
+                          </button>
                         </div>
                       )}
                     </td>
@@ -6909,2107 +4243,577 @@ function AssetsManagementView({
         </div>
       </div>
 
-      {/* مودال ثبت رویداد تغییر اموال */}
-      {eventModalAsset && (
+      {returnModalId && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
-          <form onSubmit={handleEventSubmit} className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs">
-            <div className="flex items-center justify-between border-b pb-3">
-              <h4 className="font-extrabold text-sm text-[#0f294a]">
-                ثبت رویداد تغییر اموال: {eventModalAsset.itemName} ({eventModalAsset.companyName})
-              </h4>
-              <button type="button" onClick={() => setEventModalAsset(null)}>
-                <X className="w-5 h-5 text-slate-400" />
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
+            <h4 className="font-extrabold text-sm text-rose-900">درخواست اصلاح اطلاعات پرسنل از شرکت</h4>
+            <textarea
+              rows={3}
+              value={returnNoteText}
+              onChange={(e) => setReturnNoteText(e.target.value)}
+              placeholder="موارد نیازمند اصلاح را وارد کنید..."
+              className="w-full p-3 rounded-xl border border-slate-300"
+            />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setReturnModalId(null)} className="px-4 py-2 rounded-xl border">انصراف</button>
+              <button
+                onClick={() => {
+                  if (!returnNoteText.trim()) {
+                    showToast('درج توضیح اصلاح الزامی است.', 'error');
+                    return;
+                  }
+                  onReviewPersonnel(returnModalId, 'return', returnNoteText);
+                  setReturnModalId(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 text-white font-bold"
+              >
+                ارسال به کارتابل شرکت
               </button>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block font-bold mb-1">نوع عملیات *</label>
-                <select
-                  value={eventType}
-                  onChange={(e) => setEventType(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                >
-                  {ASSET_EVENT_TYPES.filter((t) => t.id !== 'initial').map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block font-bold mb-1">تعداد مورد تغییر</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={eventQty}
-                  onChange={(e) => setEventQty(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block font-bold mb-1">وضعیت فیزیکی جدید کالا</label>
-                <input
-                  type="text"
-                  value={eventCondition}
-                  onChange={(e) => setEventCondition(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block font-bold mb-1">دلیل ثبت تغییر / شرح صورت‌جلسه *</label>
-                <textarea
-                  rows={3}
-                  value={eventReason}
-                  onChange={(e) => setEventReason(e.target.value)}
-                  placeholder="دلیل افزایش، استرداد یا اصلاح را دقیق بنویسید..."
-                  className="w-full p-2.5 rounded-xl border border-slate-300"
-                  required
-                />
-              </div>
-            </div>
-
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={eventSendConfirm}
-                onChange={(e) => setEventSendConfirm(e.target.checked)}
-              />
-              <span>ارسال مجدد برای تأیید الکترونیکی شرکت</span>
-            </label>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setEventModalAsset(null)} className="px-4 py-2 rounded-xl border">
-                انصراف
-              </button>
-              <button type="submit" className="px-5 py-2 rounded-xl bg-[#0f294a] text-white font-bold">
-                ثبت رویداد در تاریخچه
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function CompanyAssetConfirmationView({ companies, assets, adminUser, onCompanyResponse }) {
-  const [selectedCompanyId, setSelectedCompanyId] = useState(companies[0]?.id || 'comp-1');
-  const [discrepancyNotes, setDiscrepancyNotes] = useState({});
+function CenterHRReportsView({ companies, hrState, showToast }) {
+  const [filterCompany, setFilterCompany] = useState('همه');
+  const [filterContract, setFilterContract] = useState('همه');
+  const [filterStatus, setFilterStatus] = useState('همه');
+  const [filterAttendance, setFilterAttendance] = useState('همه');
+  const [filterFromDate, setFilterFromDate] = useState('');
 
-  const companyAssets = (assets || []).filter((a) => a.companyId === selectedCompanyId);
+  const filteredPersonnel = useMemo(() => {
+    return (hrState.personnel || []).filter((p) => {
+      if (filterCompany !== 'همه' && p.companyId !== filterCompany) return false;
+      if (filterContract !== 'همه' && p.contractType !== filterContract) return false;
+      if (filterStatus !== 'همه' && p.cooperationStatus !== filterStatus) return false;
+      if (filterAttendance !== 'همه' && p.attendanceMode !== filterAttendance) return false;
+      if (filterFromDate.trim() && (p.startDate || '') < filterFromDate.trim()) return false;
+      return true;
+    });
+  }, [hrState.personnel, filterCompany, filterContract, filterStatus, filterAttendance, filterFromDate]);
+
+  const analytics = useMemo(() => {
+    const active = filteredPersonnel.filter((p) => p.cooperationStatus === 'فعال');
+    const exited = filteredPersonnel.filter((p) => p.cooperationStatus === 'خاتمه همکاری');
+    const fullTime = active.filter((p) => p.cooperationType === 'تمام‌وقت').length;
+    const partTime = active.filter((p) => p.cooperationType === 'پاره‌وقت').length;
+    const onSite = active.filter((p) => p.attendanceMode === 'حضوری در محل شرکت').length;
+    const remote = active.filter((p) => p.attendanceMode === 'دورکار / مجازی').length;
+    const hybrid = active.filter((p) => p.attendanceMode === 'ترکیبی (حضوری و مجازی)').length;
+
+    const personalVehicles = active.reduce((s, p) => s + (p.vehicles?.length || 0), 0);
+    const companyVehicles = (hrState.companyVehicles || []).filter(
+      (v) => filterCompany === 'همه' || v.companyId === filterCompany
+    ).length;
+
+    const byDegree = {};
+    const byUnit = {};
+    active.forEach((p) => {
+      byDegree[p.degree || 'سایر'] = (byDegree[p.degree || 'سایر'] || 0) + 1;
+      byUnit[p.orgUnit || 'سایر'] = (byUnit[p.orgUnit || 'سایر'] || 0) + 1;
+    });
+
+    return {
+      total: filteredPersonnel.length,
+      activeCount: active.length,
+      exitedCount: exited.length,
+      fullTime,
+      partTime,
+      onSite,
+      remote,
+      hybrid,
+      personalVehicles,
+      companyVehicles,
+      totalVehicles: personalVehicles + companyVehicles,
+      byDegree,
+      byUnit
+    };
+  }, [filteredPersonnel, hrState.companyVehicles, filterCompany]);
+
+  const handleExportExcel = () => {
+    if (!window.XLSX) {
+      showToast('کتابخانه اکسل در حال بارگذاری است؛ لطفاً لحظاتی دیگر تلاش کنید.', 'error');
+      return;
+    }
+    const rows = filteredPersonnel.map((p, i) => ({
+      'ردیف': i + 1,
+      'شرکت': p.companyName,
+      'نام و نام خانوادگی': `${p.firstName} ${p.lastName}`,
+      'مدرک تحصیلی': p.degree,
+      'رشته تحصیلی': p.major,
+      'واحد سازمانی': p.orgUnit,
+      'جایگاه شغلی': p.jobTitle,
+      'نوع همکاری': p.cooperationType,
+      'نوع قرارداد': p.contractType,
+      'وضعیت حضور': p.attendanceMode,
+      'وضعیت همکاری': p.cooperationStatus,
+      'تاریخ شروع': p.startDate
+    }));
+    const ws = window.XLSX.utils.json_to_sheet(rows);
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, ws, 'گزارش نیروی انسانی');
+    window.XLSX.writeFile(wb, 'Nokhbegan_HR_Report.xlsx');
+    showToast('گزارش اکسل نیروی انسانی مرکز رشد دانلود شد.');
+  };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 no-print">
         <div>
-          <h1 className="text-xl font-extrabold text-[#0f294a]">
-            کارتابل تأیید الکترونیکی اموال تحویلی توسط شرکت
+          <h1 className="text-xl sm:text-2xl font-extrabold text-[#0f294a]">
+            گزارش‌های مدیریتی و آماری نیروی انسانی مرکز رشد
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            نماینده شرکت اقلام تحویلی را بررسی کرده و دریافت سالم را تأیید یا مغایرت را گزارش می‌دهد.
+            تحلیل آمار اشتغال، وضعیت حضور و تردد خودروها و تغییرات دوره‌ای شرکت‌ها
           </p>
         </div>
-        <select
-          value={selectedCompanyId}
-          onChange={(e) => setSelectedCompanyId(e.target.value)}
-          className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-xs font-bold"
-        >
-          {companies.map((c) => (
-            <option key={c.id} value={c.id}>
-              پنل شرکت: {c.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {companyAssets.length === 0 ? (
-        <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 text-sm text-slate-500">
-          هیچ قلم اموالی برای این شرکت ثبت نشده است.
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {companyAssets.map((asset) => {
-            const q = computeAssetQuantities(asset);
-            const isConfirmed =
-              asset.deliveryStatus === 'تأییدشده توسط شرکت' || asset.deliveryStatus === 'نهایی‌شده';
-            return (
-              <div key={asset.id} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3 text-xs">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono font-bold text-blue-800 bg-blue-50 px-2.5 py-0.5 rounded-lg">
-                        {toPersianDigits(asset.assetCode)}
-                      </span>
-                      <span className="font-extrabold text-base text-slate-900">{asset.itemName}</span>
-                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 font-bold">
-                        تعداد فعلی: {toPersianDigits(q.currentQty)} عدد
-                      </span>
-                    </div>
-                    <p className="text-slate-600">
-                      وضعیت فیزیکی ثبت‌شده: <b>{asset.physicalCondition}</b> | تاریخ تحویل:{' '}
-                      <b>{toPersianDigits(asset.deliveryDate)}</b>
-                    </p>
-                  </div>
-
-                  <span
-                    className={`px-3 py-1 rounded-full font-bold ${
-                      isConfirmed
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : asset.deliveryStatus === 'دارای مغایرت'
-                        ? 'bg-rose-100 text-rose-800'
-                        : 'bg-amber-100 text-amber-900'
-                    }`}
-                  >
-                    {asset.deliveryStatus}
-                  </span>
-                </div>
-
-                {isConfirmed ? (
-                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900">
-                    تأیید الکترونیکی دریافت کالا توسط <b>{asset.companyConfirmedBy || adminUser?.name}</b> در تاریخ{' '}
-                    <b dir="ltr">{toPersianDigits(asset.companyConfirmedAt || getNowJalaliDateTime())}</b> ثبت شده است.
-                  </div>
-                ) : (
-                  <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row gap-2">
-                    <button
-                      onClick={() => onCompanyResponse(asset.id, 'confirm')}
-                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-1.5 shrink-0"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      <span>تأیید دریافت سالم و کامل</span>
-                    </button>
-                    <input
-                      type="text"
-                      value={discrepancyNotes[asset.id] || ''}
-                      onChange={(e) => setDiscrepancyNotes((p) => ({ ...p, [asset.id]: e.target.value }))}
-                      placeholder="در صورت وجود مغایرت یا ایراد فیزیکی، شرح مغایرت را وارد کنید..."
-                      className="flex-1 px-3 py-2 rounded-xl border border-slate-300"
-                    />
-                    <button
-                      onClick={() =>
-                        onCompanyResponse(
-                          asset.id,
-                          'discrepancy',
-                          discrepancyNotes[asset.id] || 'مغایرت در تعداد یا وضعیت فیزیکی کالا'
-                        )
-                      }
-                      className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shrink-0"
-                    >
-                      اعلام مغایرت
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AssetMinutesView({ companies, assets, orgSettings, onExportWord }) {
-  const [selectedCompanyId, setSelectedCompanyId] = useState(companies[0]?.id || 'comp-1');
-  const company = companies.find((c) => c.id === selectedCompanyId) || companies[0];
-  const companyAssets = (assets || []).filter((a) => a.companyId === selectedCompanyId);
-
-  return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 no-print">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-extrabold text-[#0f294a]">صورت‌جلسه الکترونیکی تحویل و تحول</h1>
-          <select
-            value={selectedCompanyId}
-            onChange={(e) => setSelectedCompanyId(e.target.value)}
-            className="px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-xs font-bold"
-          >
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => onExportWord(company, companyAssets)}
-            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold flex items-center gap-1.5"
-          >
+          <button onClick={handleExportExcel} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold flex items-center gap-1.5">
             <Download className="w-4 h-4" />
-            <span>خروجی Word (.docx)</span>
+            <span>خروجی Excel</span>
           </button>
-          <button
-            onClick={() => window.print()}
-            className="px-4 py-2 rounded-xl bg-[#0f294a] text-white text-xs font-bold flex items-center gap-1.5"
-          >
+          <button onClick={() => window.print()} className="px-4 py-2 rounded-xl bg-[#0f294a] text-white text-xs font-bold flex items-center gap-1.5">
             <Printer className="w-4 h-4" />
             <span>چاپ / PDF</span>
           </button>
         </div>
       </div>
 
-      <div className="bg-white border border-slate-300 rounded-2xl p-8 shadow-sm space-y-6 text-xs">
-        <div className="text-center border-b-2 border-[#0f294a] pb-4">
-          <p className="font-bold mb-1">بسمه تعالی</p>
-          <h2 className="text-base font-extrabold text-[#0f294a]">
-            {orgSettings?.orgSubTitle || 'پارک فناوری پردیس — مرکز رشد فناوری نخبگان'}
-          </h2>
-          <p className="text-sm font-bold mt-1">صورت‌جلسه رسمی تحویل و تحول اموال و تجهیزات</p>
-        </div>
-
-        <p className="leading-7 text-sm">
-          در تاریخ <b>{toPersianDigits(getTodayJalali())}</b>، اقلام مشروحه زیر از طرف مرکز رشد فناوری نخبگان به شرکت/هسته فناور{' '}
-          <b>«{company?.name}»</b> (محل استقرار: <b>{company?.unitNumber || 'تعیین‌شده'}</b>) تحویل گردید:
-        </p>
-
-        <table className="w-full text-right border border-slate-300">
-          <thead className="bg-slate-100">
-            <tr>
-              <th className="p-2.5 border border-slate-300">ردیف</th>
-              <th className="p-2.5 border border-slate-300">کد اموال</th>
-              <th className="p-2.5 border border-slate-300">شرح کالا</th>
-              <th className="p-2.5 border border-slate-300 text-center">موجودی فعلی</th>
-              <th className="p-2.5 border border-slate-300">وضعیت فیزیکی</th>
-              <th className="p-2.5 border border-slate-300">وضعیت تأیید شرکت</th>
-            </tr>
-          </thead>
-          <tbody>
-            {companyAssets.map((a, idx) => {
-              const q = computeAssetQuantities(a);
-              return (
-                <tr key={a.id}>
-                  <td className="p-2.5 border border-slate-300">{toPersianDigits(idx + 1)}</td>
-                  <td className="p-2.5 border border-slate-300 font-mono">{toPersianDigits(a.assetCode)}</td>
-                  <td className="p-2.5 border border-slate-300 font-bold">{a.itemName}</td>
-                  <td className="p-2.5 border border-slate-300 text-center font-extrabold">{toPersianDigits(q.currentQty)}</td>
-                  <td className="p-2.5 border border-slate-300">{a.physicalCondition}</td>
-                  <td className="p-2.5 border border-slate-300">{a.deliveryStatus}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-
-        <div className="grid grid-cols-2 gap-8 pt-10 text-center font-bold text-sm">
-          <div>امضا و تأیید نماینده مرکز رشد فناوری نخبگان</div>
-          <div>امضا و تأیید نماینده شرکت ({company?.ceoName})</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AssetsAggregateReportView({ assets, showToast }) {
-  const summaryByItem = useMemo(() => {
-    const map = {};
-    (assets || []).forEach((a) => {
-      const q = computeAssetQuantities(a);
-      map[a.itemName] = (map[a.itemName] || 0) + q.currentQty;
-    });
-    return Object.entries(map);
-  }, [assets]);
-
-  const handleExportExcel = () => {
-    if (!window.XLSX) {
-      showToast('کتابخانه اکسل در حال بارگذاری است.', 'error');
-      return;
-    }
-    const rows = (assets || []).map((a) => {
-      const q = computeAssetQuantities(a);
-      return {
-        'کد اموال': a.assetCode,
-        'نام شرکت': a.companyName,
-        'نام کالا': a.itemName,
-        'تعداد اولیه': q.initialQty,
-        'اضافه‌شده': q.addedQty,
-        'مستردشده': q.returnedQty,
-        'موجودی فعلی': q.currentQty,
-        'وضعیت تأیید شرکت': a.deliveryStatus
-      };
-    });
-    const ws = window.XLSX.utils.json_to_sheet(rows);
-    const wb = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(wb, ws, 'گزارش اموال');
-    window.XLSX.writeFile(wb, 'Nokhbegan_Assets_Report.xlsx');
-    showToast('گزارش اکسل اموال مرکز رشد دانلود شد.');
-  };
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 no-print">
-        <div>
-          <h1 className="text-xl font-extrabold text-[#0f294a]">گزارش تجمیعی اموال و تجهیزات مرکز رشد</h1>
-          <p className="text-xs text-slate-500 mt-1">تجمیع اقلام تحویلی به تفکیک نوع کالا و شرکت‌های مستقر</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={handleExportExcel} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold">
-            خروجی Excel
-          </button>
-          <button onClick={() => window.print()} className="px-4 py-2 rounded-xl bg-[#0f294a] text-white text-xs font-bold">
-            چاپ / PDF
-          </button>
-        </div>
+      <div className="bg-white rounded-2xl p-4 border border-slate-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs no-print">
+        <select value={filterCompany} onChange={(e) => setFilterCompany(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+          <option value="همه">شرکت: همه شرکت‌ها</option>
+          {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select value={filterContract} onChange={(e) => setFilterContract(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+          <option value="همه">نوع قرارداد: همه</option>
+          {HR_CONTRACT_TYPES.map((ct) => <option key={ct} value={ct}>{ct}</option>)}
+        </select>
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+          <option value="همه">وضعیت همکاری: همه</option>
+          {HR_COOPERATION_STATUSES.map((st) => <option key={st} value={st}>{st}</option>)}
+        </select>
+        <select value={filterAttendance} onChange={(e) => setFilterAttendance(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+          <option value="همه">نوع حضور: همه</option>
+          {HR_ATTENDANCE_MODES.map((am) => <option key={am} value={am}>{am}</option>)}
+        </select>
+        <input
+          type="text"
+          dir="ltr"
+          placeholder="از تاریخ شروع (1404/01/01)"
+          value={filterFromDate}
+          onChange={(e) => setFilterFromDate(e.target.value)}
+          className="px-3 py-2 rounded-xl border border-slate-300"
+        />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
-        {summaryByItem.map(([name, total]) => (
-          <div key={name} className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm text-center">
-            <span className="text-xs text-slate-500 block mb-1">مجموع {name}</span>
-            <span className="text-2xl font-extrabold text-[#0f294a]">{toPersianDigits(total)}</span>
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 text-center">
+        {[
+          { label: 'کل پرسنل فیلترشده', val: analytics.total },
+          { label: 'پرسنل فعال', val: analytics.activeCount },
+          { label: 'تمام‌وقت / پاره‌وقت', val: `${analytics.fullTime} / ${analytics.partTime}` },
+          { label: 'حضوری در مرکز', val: analytics.onSite },
+          { label: 'دورکار / ترکیبی', val: `${analytics.remote} / ${analytics.hybrid}` },
+          { label: 'کل خودروهای ثبت‌شده', val: analytics.totalVehicles },
+          { label: 'خودرو شخصی / شرکتی', val: `${analytics.personalVehicles} / ${analytics.companyVehicles}` },
+          { label: 'خاتمه همکاری (خروج)', val: analytics.exitedCount }
+        ].map((item, i) => (
+          <div key={i} className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+            <span className="text-lg font-extrabold text-[#0f294a] block mb-1">{toPersianDigits(item.val)}</span>
+            <span className="text-[11px] text-slate-500">{item.label}</span>
           </div>
         ))}
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-        <table className="w-full text-right text-xs">
-          <thead className="bg-slate-50 text-slate-700 border-b border-slate-200">
-            <tr>
-              <th className="py-3 px-4">شرکت</th>
-              <th className="py-3 px-4">نام کالا</th>
-              <th className="py-3 px-4">کد اموال</th>
-              <th className="py-3 px-4 text-center">موجودی فعلی</th>
-              <th className="py-3 px-4">وضعیت تأیید</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {(assets || []).map((a) => {
-              const q = computeAssetQuantities(a);
-              return (
-                <tr key={a.id}>
-                  <td className="py-3 px-4 font-bold">{a.companyName}</td>
-                  <td className="py-3 px-4">{a.itemName}</td>
-                  <td className="py-3 px-4 font-mono">{toPersianDigits(a.assetCode)}</td>
-                  <td className="py-3 px-4 text-center font-extrabold">{toPersianDigits(q.currentQty)}</td>
-                  <td className="py-3 px-4">{a.deliveryStatus}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 space-y-3">
+          <h3 className="font-bold text-sm text-slate-900">توزیع نیروی انسانی بر اساس مدرک تحصیلی</h3>
+          {Object.entries(analytics.byDegree).map(([deg, cnt]) => (
+            <div key={deg} className="flex justify-between p-2.5 rounded-xl bg-slate-50">
+              <span>{deg}</span>
+              <b>{toPersianDigits(cnt)} نفر</b>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 space-y-3">
+          <h3 className="font-bold text-sm text-slate-900">توزیع نیروی انسانی بر اساس واحد و حوزه شغلی</h3>
+          {Object.entries(analytics.byUnit).map(([unit, cnt]) => (
+            <div key={unit} className="flex justify-between p-2.5 rounded-xl bg-slate-50">
+              <span>{unit}</span>
+              <b>{toPersianDigits(cnt)} نفر</b>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
 // ============================================================================
-// ۹. کامپوننت‌های ماژول «تبدیل وضعیت شرکت (پیش‌رشد به رشد)»
+// ۸. ماژول تبدیل وضعیت شرکت (پیش‌رشد به رشد)
 // ============================================================================
-
-function UpgradeStatusBadge({ status }) {
-  const styles = {
-    'شروع‌نشده': 'bg-slate-100 text-slate-700 border-slate-200',
-    'در حال تکمیل': 'bg-blue-50 text-blue-700 border-blue-200',
-    'ارسال‌شده به مرکز رشد': 'bg-indigo-50 text-indigo-800 border-indigo-200',
-    'در حال بررسی': 'bg-sky-50 text-sky-800 border-sky-200',
-    'عودت‌شده برای اصلاح': 'bg-rose-100 text-rose-800 border-rose-300',
-    'ارسال مجدد': 'bg-amber-100 text-amber-900 border-amber-300',
-    'تأییدشده و تبدیل وضعیت به رشد': 'bg-emerald-100 text-emerald-800 border-emerald-300'
-  };
-  return (
-    <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border inline-block ${styles[status] || styles['در حال تکمیل']}`}>
-      {status || 'شروع‌نشده'}
-    </span>
-  );
-}
-
-// ۹-الف. پنل شرکت برای تکمیل، ذخیره پیش‌نویس، پیش‌نمایش و ارسال درخواست تبدیل وضعیت
-function CompanyUpgradePortalView({
-  companies,
-  upgradeRequests,
-  adminUser,
-  onSaveRequest,
-  showToast
-}) {
-  const preIncubationCompanies = useMemo(
-    () =>
-      companies.filter(
-        (c) =>
-          (c.level && c.level.includes('پیش‌رشد')) ||
-          (c.membershipStatus && c.membershipStatus.includes('پیش‌رشد')) ||
-          upgradeRequests.some((r) => r.companyId === c.id)
-      ),
-    [companies, upgradeRequests]
-  );
-
+function CompanyUpgradePortalView({ companies, upgradeState, adminUser, onSaveRequest, showToast }) {
   const lockedCompanyId = adminUser?.secretariatRole === 'company_rep' ? adminUser.companyId || 'comp-4' : null;
-  const [selectedCompanyId, setSelectedCompanyId] = useState(
-    lockedCompanyId || preIncubationCompanies[0]?.id || companies[0]?.id || 'comp-4'
-  );
+  const [selectedCompanyId, setSelectedCompanyId] = useState(lockedCompanyId || 'comp-4');
+  const company = companies.find((c) => c.id === selectedCompanyId) || companies[0];
+  const [step, setStep] = useState(1);
 
-  const activeCompany = companies.find((c) => c.id === selectedCompanyId) || companies[0];
-  const existingRequest = upgradeRequests.find((r) => r.companyId === selectedCompanyId);
-
-  const [draftForm, setDraftForm] = useState(() =>
-    existingRequest ? JSON.parse(JSON.stringify(existingRequest)) : activeCompany ? createEmptyUpgradeRequest(activeCompany) : null
+  const existingReq = upgradeState.requests.find((r) => r.companyId === selectedCompanyId);
+  const [reqData, setReqData] = useState(() =>
+    existingReq || {
+      id: 'upg-' + Date.now(),
+      companyId: company?.id,
+      companyName: company?.name,
+      status: 'در حال تکمیل',
+      startedAt: getNowJalaliDateTime(),
+      sectionRemarks: {},
+      section1: {
+        fullCompanyName: company?.name || '',
+        legalType: company?.companyType || 'سهامی خاص',
+        nationalId: company?.nationalId || '',
+        registrationNumber: company?.registrationNumber || '',
+        registrationDate: company?.establishedDate || '',
+        headquartersAddress: company?.unitNumber || '',
+        ceoName: company?.ceoName || '',
+        phone: company?.ceoPhone || '',
+        email: company?.email || '',
+        shareholders: [{ name: company?.ceoName || '', sharePercent: 100, role: 'مدیرعامل' }]
+      },
+      section2: { reportText: '', attachments: [] },
+      section3: {
+        customerSegments: '',
+        valuePropositions: '',
+        channels: '',
+        customerRelationships: '',
+        revenueStreams: '',
+        keyResources: '',
+        keyActivities: '',
+        keyPartners: '',
+        costStructure: ''
+      },
+      section4: {
+        overview: '',
+        targetMarket: '',
+        forecastSales: '',
+        forecastCustomers: '',
+        forecastContracts: '',
+        quarters: {
+          q1: { actions: '', output: '', kpi: '' },
+          q2: { actions: '', output: '', kpi: '' },
+          q3: { actions: '', output: '', kpi: '' },
+          q4: { actions: '', output: '', kpi: '' }
+        }
+      },
+      section5: { contracts: [] },
+      history: []
+    }
   );
-  const [activeFormStep, setActiveFormStep] = useState('sec1'); // sec1..sec5 | preview | history
-  const [lastAutoSaveMsg, setLastAutoSaveMsg] = useState('');
 
   useEffect(() => {
-    const found = upgradeRequests.find((r) => r.companyId === selectedCompanyId);
-    const comp = companies.find((c) => c.id === selectedCompanyId);
-    if (found) {
-      setDraftForm(JSON.parse(JSON.stringify(found)));
-    } else if (comp) {
-      setDraftForm(createEmptyUpgradeRequest(comp));
-    }
-  }, [selectedCompanyId, upgradeRequests, companies]);
+    const found = upgradeState.requests.find((r) => r.companyId === selectedCompanyId);
+    if (found) setReqData(found);
+  }, [selectedCompanyId, upgradeState.requests]);
 
-  if (!draftForm || !activeCompany) return null;
-
-  const completion = computeUpgradeCompletion(draftForm);
-  const isApproved = draftForm.status === 'تأییدشده و تبدیل وضعیت به رشد';
-  const isLockedForReview =
-    ['ارسال‌شده به مرکز رشد', 'در حال بررسی', 'ارسال مجدد'].includes(draftForm.status) &&
-    adminUser?.secretariatRole === 'company_rep';
-
-  const handleFileUploadField = (file, callback) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      callback({
-        id: 'att-' + Date.now() + Math.random().toString(16).slice(2, 5),
-        name: file.name,
-        size: `${Math.max(1, Math.round(file.size / 1024))} KB`,
-        type: file.type,
-        dataUrl: reader.result,
-        uploadedAt: getNowJalaliDateTime()
-      });
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // اعتبارسنجی قبل از ارسال نهایی به مرکز رشد
-  const handleValidateAndSubmit = () => {
-    const reg = draftForm.registrationInfo;
-    if (!reg.fullCompanyName.trim()) {
-      showToast('نام کامل شرکت در بخش اول الزامی است.', 'error');
-      setActiveFormStep('sec1');
-      return;
-    }
-    if (reg.nationalId && !/^\d{11}$/.test(String(reg.nationalId).trim())) {
-      showToast('شناسه ملی شرکت باید دقیقاً ۱۱ رقم عددی باشد.', 'error');
-      setActiveFormStep('sec1');
-      return;
-    }
-    const totalShares = (reg.shareholders || []).reduce((s, sh) => s + (Number(sh.sharePercent) || 0), 0);
-    if ((reg.shareholders?.length || 0) > 0 && totalShares !== 100) {
-      showToast(`مجموع درصد سهام سهامداران باید ۱۰۰٪ باشد (مجموع فعلی: ${toPersianDigits(totalShares)}٪).`, 'error');
-      setActiveFormStep('sec1');
-      return;
-    }
-    const plainTech = String(draftForm.technicalReport?.content || '').replace(/<[^>]*>/g, '').trim();
-    if (plainTech.length < 30) {
-      showToast('لطفاً گزارش پیشرفت فنی محصول را در بخش دوم تکمیل نمایید.', 'error');
-      setActiveFormStep('sec2');
-      return;
-    }
-    onSaveRequest(draftForm, true);
-  };
-
-  // محاسبه تجمیعی قراردادهای بخش پنجم
-  const contractsSummary = useMemo(() => {
-    const list = draftForm.contracts || [];
-    const count = list.length;
-    const totalContractValue = list.reduce((s, c) => s + (Number(c.contractAmount) || 0), 0);
-    const totalRealizedSales = list.reduce((s, c) => s + (Number(c.realizedSalesAmount) || 0), 0);
-    return { count, totalContractValue, totalRealizedSales };
-  }, [draftForm.contracts]);
-
-  const stepTabs = [
-    { id: 'sec1', title: '۱. اطلاعات ثبتی و حقوقی', percent: completion.sections.sec1, needsFix: draftForm.sectionCorrections?.sec1?.needsFix },
-    { id: 'sec2', title: '۲. گزارش پیشرفت فنی', percent: completion.sections.sec2, needsFix: draftForm.sectionCorrections?.sec2?.needsFix },
-    { id: 'sec3', title: '۳. بوم کسب‌وکار (BMC)', percent: completion.sections.sec3, needsFix: draftForm.sectionCorrections?.sec3?.needsFix },
-    { id: 'sec4', title: '۴. برنامه یک‌ساله تجاری‌سازی', percent: completion.sections.sec4, needsFix: draftForm.sectionCorrections?.sec4?.needsFix },
-    { id: 'sec5', title: '۵. قراردادها و سوابق فروش', percent: completion.sections.sec5, needsFix: draftForm.sectionCorrections?.sec5?.needsFix },
-    { id: 'preview', title: 'پیش‌نمایش جامع', percent: null, needsFix: false },
-    { id: 'history', title: `تاریخچه (${toPersianDigits(draftForm.history?.length || 0)})`, percent: null, needsFix: false }
-  ];
+  const totalContractAmount = (reqData.section5?.contracts || []).reduce((s, c) => s + (Number(c.contractAmount) || 0), 0);
+  const totalRealizedSales = (reqData.section5?.contracts || []).reduce((s, c) => s + (Number(c.realizedSales) || 0), 0);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      {/* هدر وضعیت و انتخاب شرکت */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-xl font-extrabold text-[#0f294a]">
-                درخواست تبدیل وضعیت از پیش‌رشد به رشد
-              </h1>
-              <UpgradeStatusBadge status={draftForm.status} />
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              اطلاعات هویتی به‌صورت خودکار از پرونده شرکت فراخوانی شده است. تغییر وضعیت شرکت پس از تأیید نهایی کارشناسان مرکز رشد اعمال می‌شود.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 text-xs">
-            <span className="font-bold text-slate-700">پرونده شرکت:</span>
-            <select
-              disabled={Boolean(lockedCompanyId)}
-              value={selectedCompanyId}
-              onChange={(e) => setSelectedCompanyId(e.target.value)}
-              className="px-3.5 py-2 rounded-xl border border-slate-300 bg-slate-50 font-bold"
-            >
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.level})
-                </option>
-              ))}
-            </select>
-          </div>
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-extrabold text-[#0f294a]">
+            درخواست تبدیل وضعیت از پیش‌رشد به رشد
+          </h1>
+          <p className="text-slate-500 mt-1">وضعیت فعلی پرونده: <b className="text-blue-800">{reqData.status}</b></p>
         </div>
-
-        {/* نوار پیشرفت تکمیل اطلاعات */}
-        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
-          <div className="flex items-center justify-between text-xs mb-2">
-            <span className="font-bold text-slate-700 flex items-center gap-1.5">
-              <Percent className="w-4 h-4 text-blue-600" />
-              درصد تکمیل کل پرونده تبدیل وضعیت:
-            </span>
-            <span className="font-extrabold text-blue-800 text-sm">
-              {toPersianDigits(completion.totalPercent)}٪ تکمیل شده
-            </span>
-          </div>
-          <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-l from-emerald-500 to-blue-600 rounded-full transition-all duration-500"
-              style={{ width: `${completion.totalPercent}%` }}
-            />
-          </div>
-        </div>
-
-        {/* اعلان تأیید نهایی یا عودت برای اصلاح */}
-        {isApproved && (
-          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs flex items-start gap-3">
-            <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-            <div>
-              <h4 className="font-extrabold text-sm">
-                درخواست تبدیل وضعیت شما به دوره «رشد» تأیید نهایی شد!
-              </h4>
-              <p className="mt-1">
-                تاریخ ثبت تبدیل وضعیت: <b dir="ltr">{toPersianDigits(draftForm.approvedAt)}</b> — سطح شرکت در پرونده اصلی سامانه به «سطح ۲ (دوره رشد)» ارتقا یافت.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {draftForm.status === 'عودت‌شده برای اصلاح' && (
-          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-300 text-rose-950 text-xs space-y-2">
-            <div className="flex items-center gap-2 font-extrabold text-sm text-rose-800">
-              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
-              <span>درخواست شما توسط کارشناس مرکز رشد جهت اصلاح و تکمیل عودت داده شده است:</span>
-            </div>
-            <p className="leading-6">{draftForm.generalReturnNote}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-              {Object.entries(draftForm.sectionCorrections || {})
-                .filter(([, val]) => val.needsFix)
-                .map(([secKey, val]) => (
-                  <div key={secKey} className="p-2.5 rounded-xl bg-white border border-rose-200">
-                    <span className="font-bold text-rose-800 block">{UPGRADE_SECTION_TITLES[secKey]}</span>
-                    <span className="text-slate-700">{val.note}</span>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
+        <select
+          disabled={Boolean(lockedCompanyId)}
+          value={selectedCompanyId}
+          onChange={(e) => setSelectedCompanyId(e.target.value)}
+          className="px-3.5 py-2 rounded-xl border border-slate-300 bg-white font-bold"
+        >
+          {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
       </div>
 
-      {/* تب‌های ۵ بخش فرم + پیش‌نمایش و تاریخچه */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="flex overflow-x-auto border-b border-slate-200 bg-slate-100/80 px-3 pt-2.5 gap-1.5">
-          {stepTabs.map((t) => (
+        <div className="flex overflow-x-auto border-b bg-slate-50 px-4 pt-2 gap-1">
+          {[
+            { id: 1, label: '۱. اطلاعات ثبتی و سهامداران' },
+            { id: 2, label: '۲. گزارش پیشرفت فنی' },
+            { id: 3, label: '۳. بوم مدل کسب‌وکار (۹ بخش)' },
+            { id: 4, label: '۴. برنامه یک‌ساله تجاری‌سازی' },
+            { id: 5, label: '۵. قراردادهای فروش' }
+          ].map((t) => (
             <button
               key={t.id}
-              type="button"
-              onClick={() => setActiveFormStep(t.id)}
-              className={`px-3.5 py-2.5 rounded-t-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all ${
-                activeFormStep === t.id
-                  ? 'bg-white text-[#0f294a] border-t border-x border-slate-200 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+              onClick={() => setStep(t.id)}
+              className={`px-3.5 py-2.5 rounded-t-xl font-bold whitespace-nowrap ${
+                step === t.id ? 'bg-white text-[#0f294a] border-t border-x' : 'text-slate-600'
               }`}
             >
-              <span>{t.title}</span>
-              {t.needsFix && (
-                <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[10px]">نیازمند اصلاح</span>
-              )}
-              {!t.needsFix && t.percent !== null && (
-                <span
-                  className={`px-1.5 py-0.5 rounded text-[10px] ${
-                    t.percent === 100 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  {toPersianDigits(t.percent)}٪
-                </span>
-              )}
+              {t.label}
             </button>
           ))}
         </div>
 
-        <div className="p-6">
-          {/* بخش اول: اطلاعات ثبتی و ساختار حقوقی شرکت */}
-          {activeFormStep === 'sec1' && (
-            <div className="space-y-6 text-xs">
-              <div className="border-b border-slate-100 pb-3">
-                <h3 className="text-base font-extrabold text-[#0f294a]">
-                  اطلاعات ثبتی و ساختار حقوقی شرکت
-                </h3>
-                <p className="text-slate-500 mt-0.5">
-                  مشخصات ثبتی شخصیت حقوقی، ترکیب سهامداران و مدارک رسمی ثبت شرکت را تکمیل و بارگذاری نمایید.
-                </p>
+        <div className="p-6 space-y-4">
+          {reqData.sectionRemarks?.[`section${step}`] && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 font-semibold">
+              توضیح اصلاحی کارشناس مرکز رشد برای این بخش: {reqData.sectionRemarks[`section${step}`]}
+            </div>
+          )}
+
+          {step === 1 && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block font-bold mb-1">نام کامل شرکت</label>
+                <input type="text" value={reqData.section1.fullCompanyName} onChange={(e) => setReqData({ ...reqData, section1: { ...reqData.section1, fullCompanyName: e.target.value } })} className="w-full px-3 py-2 rounded-xl border" />
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">نام کامل شرکت *</label>
-                  <input
-                    type="text"
-                    disabled={isLockedForReview}
-                    value={draftForm.registrationInfo.fullCompanyName}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        registrationInfo: { ...draftForm.registrationInfo, fullCompanyName: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">نوع شخصیت حقوقی</label>
-                  <select
-                    disabled={isLockedForReview}
-                    value={draftForm.registrationInfo.companyType}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        registrationInfo: { ...draftForm.registrationInfo, companyType: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                  >
-                    <option value="سهامی خاص">سهامی خاص</option>
-                    <option value="مسئولیت محدود">مسئولیت محدود</option>
-                    <option value="تعاونی دانش‌بنیان">تعاونی دانش‌بنیان</option>
-                    <option value="سهامی عام">سهامی عام</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">شناسه ملی شرکت (۱۱ رقم)</label>
-                  <input
-                    type="text"
-                    dir="ltr"
-                    disabled={isLockedForReview}
-                    value={draftForm.registrationInfo.nationalId}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        registrationInfo: { ...draftForm.registrationInfo, nationalId: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">شماره ثبت</label>
-                  <input
-                    type="text"
-                    dir="ltr"
-                    disabled={isLockedForReview}
-                    value={draftForm.registrationInfo.registrationNumber}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        registrationInfo: { ...draftForm.registrationInfo, registrationNumber: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">تاریخ ثبت شرکت (شمسی)</label>
-                  <input
-                    type="text"
-                    dir="ltr"
-                    placeholder="1403/09/12"
-                    disabled={isLockedForReview}
-                    value={draftForm.registrationInfo.establishedDate}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        registrationInfo: { ...draftForm.registrationInfo, establishedDate: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">نام مدیرعامل</label>
-                  <input
-                    type="text"
-                    disabled={isLockedForReview}
-                    value={draftForm.registrationInfo.ceoName}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        registrationInfo: { ...draftForm.registrationInfo, ceoName: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">شماره تماس شرکت</label>
-                  <input
-                    type="text"
-                    dir="ltr"
-                    disabled={isLockedForReview}
-                    value={draftForm.registrationInfo.companyPhone}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        registrationInfo: { ...draftForm.registrationInfo, companyPhone: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">ایمیل رسمی شرکت</label>
-                  <input
-                    type="email"
-                    dir="ltr"
-                    disabled={isLockedForReview}
-                    value={draftForm.registrationInfo.officialEmail}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        registrationInfo: { ...draftForm.registrationInfo, officialEmail: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">نشانی دفتر مرکزی</label>
-                  <input
-                    type="text"
-                    disabled={isLockedForReview}
-                    value={draftForm.registrationInfo.headquartersAddress}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        registrationInfo: { ...draftForm.registrationInfo, headquartersAddress: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
+              <div>
+                <label className="block font-bold mb-1">شناسه ملی</label>
+                <input type="text" dir="ltr" value={reqData.section1.nationalId} onChange={(e) => setReqData({ ...reqData, section1: { ...reqData.section1, nationalId: e.target.value } })} className="w-full px-3 py-2 rounded-xl border" />
               </div>
-
-              {/* جدول پویا سهامداران */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-sm text-slate-900">ترکیب سهامداران و اعضای هیئت‌مدیره</h4>
-                  {!isLockedForReview && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDraftForm({
-                          ...draftForm,
-                          registrationInfo: {
-                            ...draftForm.registrationInfo,
-                            shareholders: [
-                              ...(draftForm.registrationInfo.shareholders || []),
-                              { id: 'sh-' + Date.now(), name: '', nationalCode: '', sharePercent: 0, role: 'سهامدار' }
-                            ]
-                          }
-                        })
-                      }
-                      className="px-3 py-1.5 rounded-xl bg-blue-600 text-white font-bold flex items-center gap-1"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>افزودن سهامدار</span>
-                    </button>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  {(draftForm.registrationInfo.shareholders || []).map((sh, idx) => (
-                    <div key={sh.id} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center bg-white p-2.5 rounded-xl border border-slate-200">
-                      <input
-                        type="text"
-                        placeholder="نام و نام خانوادگی سهامدار"
-                        disabled={isLockedForReview}
-                        value={sh.name}
-                        onChange={(e) => {
-                          const next = [...draftForm.registrationInfo.shareholders];
-                          next[idx] = { ...sh, name: e.target.value };
-                          setDraftForm({ ...draftForm, registrationInfo: { ...draftForm.registrationInfo, shareholders: next } });
-                        }}
-                        className="sm:col-span-4 px-2.5 py-1.5 rounded-lg border border-slate-300"
-                      />
-                      <input
-                        type="text"
-                        dir="ltr"
-                        placeholder="کد / شناسه ملی"
-                        disabled={isLockedForReview}
-                        value={sh.nationalCode}
-                        onChange={(e) => {
-                          const next = [...draftForm.registrationInfo.shareholders];
-                          next[idx] = { ...sh, nationalCode: e.target.value };
-                          setDraftForm({ ...draftForm, registrationInfo: { ...draftForm.registrationInfo, shareholders: next } });
-                        }}
-                        className="sm:col-span-3 px-2.5 py-1.5 rounded-lg border border-slate-300"
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        placeholder="درصد سهام"
-                        disabled={isLockedForReview}
-                        value={sh.sharePercent}
-                        onChange={(e) => {
-                          const next = [...draftForm.registrationInfo.shareholders];
-                          next[idx] = { ...sh, sharePercent: Number(e.target.value) };
-                          setDraftForm({ ...draftForm, registrationInfo: { ...draftForm.registrationInfo, shareholders: next } });
-                        }}
-                        className="sm:col-span-2 px-2.5 py-1.5 rounded-lg border border-slate-300"
-                      />
-                      <input
-                        type="text"
-                        placeholder="سمت در شرکت"
-                        disabled={isLockedForReview}
-                        value={sh.role}
-                        onChange={(e) => {
-                          const next = [...draftForm.registrationInfo.shareholders];
-                          next[idx] = { ...sh, role: e.target.value };
-                          setDraftForm({ ...draftForm, registrationInfo: { ...draftForm.registrationInfo, shareholders: next } });
-                        }}
-                        className="sm:col-span-2 px-2.5 py-1.5 rounded-lg border border-slate-300"
-                      />
-                      <div className="sm:col-span-1 text-center">
-                        {!isLockedForReview && draftForm.registrationInfo.shareholders.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = draftForm.registrationInfo.shareholders.filter((_, i) => i !== idx);
-                              setDraftForm({ ...draftForm, registrationInfo: { ...draftForm.registrationInfo, shareholders: next } });
-                            }}
-                            className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* پیوست‌های ثبتی */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[
-                  { key: 'establishmentNotice', label: 'تصویر آگهی تأسیس' },
-                  { key: 'latestChangesNotice', label: 'تصویر آخرین تغییرات شرکت' },
-                  { key: 'statuteFile', label: 'اساسنامه شرکت' }
-                ].map((doc) => {
-                  const attached = draftForm.registrationInfo.attachments?.[doc.key];
-                  return (
-                    <div key={doc.key} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2">
-                      <span className="font-bold text-slate-800 block">{doc.label}</span>
-                      {attached ? (
-                        <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-emerald-200">
-                          <span className="truncate text-emerald-800 font-semibold">{attached.name}</span>
-                          {!isLockedForReview && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setDraftForm({
-                                  ...draftForm,
-                                  registrationInfo: {
-                                    ...draftForm.registrationInfo,
-                                    attachments: { ...draftForm.registrationInfo.attachments, [doc.key]: null }
-                                  }
-                                })
-                              }
-                              className="text-rose-600"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <input
-                          type="file"
-                          disabled={isLockedForReview}
-                          accept=".pdf,image/*"
-                          onChange={(e) =>
-                            handleFileUploadField(e.target.files?.[0], (fileObj) =>
-                              setDraftForm({
-                                ...draftForm,
-                                registrationInfo: {
-                                  ...draftForm.registrationInfo,
-                                  attachments: { ...draftForm.registrationInfo.attachments, [doc.key]: fileObj }
-                                }
-                              })
-                            )
-                          }
-                          className="block w-full text-[11px]"
-                        />
-                      )}
-                    </div>
-                  );
-                })}
+              <div>
+                <label className="block font-bold mb-1">شماره ثبت</label>
+                <input type="text" dir="ltr" value={reqData.section1.registrationNumber} onChange={(e) => setReqData({ ...reqData, section1: { ...reqData.section1, registrationNumber: e.target.value } })} className="w-full px-3 py-2 rounded-xl border" />
               </div>
             </div>
           )}
 
-          {/* بخش دوم: گزارش پیشرفت فنی ایده محوری */}
-          {activeFormStep === 'sec2' && (
-            <div className="space-y-5 text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                <div>
-                  <h3 className="text-base font-extrabold text-[#0f294a]">
-                    گزارش پیشرفت فنی محصول یا ایده محوری
-                  </h3>
-                  <p className="text-slate-500 mt-0.5">
-                    اقدامات فنی دوره پیش‌رشد، نتایج آزمون‌ها و برنامه توسعه در مرحله رشد را تشریح نمایید.
-                  </p>
-                </div>
-                {lastAutoSaveMsg && <span className="text-emerald-700 font-semibold">{lastAutoSaveMsg}</span>}
-              </div>
-
-              <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200">
-                <h4 className="font-bold text-blue-950 mb-2">راهنمای سرفصل‌های گزارش فنی:</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-slate-700">
-                  <span>• معرفی ایده محوری و محصول</span>
-                  <span>• اقدامات فنی دوره پیش‌رشد</span>
-                  <span>• پیشرفت نسبت به زمان پذیرش</span>
-                  <span>• وضعیت فعلی توسعه محصول</span>
-                  <span>• مشخصات فنی و قابلیت‌ها</span>
-                  <span>• نتایج آزمایش‌ها و آزمون‌ها</span>
-                  <span>• چالش‌های فنی باقی‌مانده</span>
-                  <span>• برنامه توسعه در مرحله رشد</span>
-                </div>
-              </div>
-
-              {/* نوار ابزار ویرایشگر ساختاریافته */}
-              {!isLockedForReview && (
-                <div className="flex flex-wrap gap-2 bg-slate-100 p-2 rounded-xl border border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDraftForm((p) => ({
-                        ...p,
-                        technicalReport: {
-                          ...p.technicalReport,
-                          content: p.technicalReport.content + '\n<h3>عنوان سرفصل جدید</h3>\n<p>توضیحات فنی...</p>'
-                        }
-                      }))
-                    }
-                    className="px-3 py-1.5 rounded-lg bg-white border border-slate-300 font-bold hover:bg-slate-50"
-                  >
-                    + درج عنوان سرفصل
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDraftForm((p) => ({
-                        ...p,
-                        technicalReport: {
-                          ...p.technicalReport,
-                          content: p.technicalReport.content + '\n<ul><li>مورد اول</li><li>مورد دوم</li></ul>'
-                        }
-                      }))
-                    }
-                    className="px-3 py-1.5 rounded-lg bg-white border border-slate-300 font-bold hover:bg-slate-50"
-                  >
-                    + درج فهرست (List)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDraftForm((p) => ({
-                        ...p,
-                        technicalReport: {
-                          ...p.technicalReport,
-                          content:
-                            p.technicalReport.content +
-                            '\n<table border="1"><tr><th>شاخص فنی</th><th>مقدار هدف</th><th>نتیجه آزمون</th></tr><tr><td>دقت عملکرد</td><td>۹۹٪</td><td>۹۹.۲٪</td></tr></table>'
-                        }
-                      }))
-                    }
-                    className="px-3 py-1.5 rounded-lg bg-white border border-slate-300 font-bold hover:bg-slate-50"
-                  >
-                    + درج جدول نتایج آزمون
-                  </button>
-                </div>
-              )}
-
+          {step === 2 && (
+            <div>
+              <label className="block font-bold mb-1">گزارش جامع پیشرفت فنی ایده محوری</label>
               <textarea
-                rows={10}
-                disabled={isLockedForReview}
-                value={draftForm.technicalReport.content}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setDraftForm((p) => ({
-                    ...p,
-                    technicalReport: { ...p.technicalReport, content: val, lastAutoSaved: getNowJalaliDateTime() }
-                  }));
-                  setLastAutoSaveMsg(`ذخیره خودکار در حافظه موقت (${toPersianDigits(getNowJalaliDateTime())})`);
-                }}
-                placeholder="گزارش کامل پیشرفت فنی محصول، نتایج آزمون‌ها و برنامه توسعه در مرحله رشد را اینجا بنویسید..."
-                className="w-full p-4 rounded-2xl border border-slate-300 text-sm leading-7"
+                rows={7}
+                value={reqData.section2.reportText}
+                onChange={(e) => setReqData({ ...reqData, section2: { ...reqData.section2, reportText: e.target.value } })}
+                className="w-full p-3 rounded-xl border leading-6"
               />
-
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                <label className="font-bold text-slate-800 block">
-                  پیوست مستندات فنی، تصاویر نمونه اولیه و گواهی نتایج آزمون‌ها:
-                </label>
-                {!isLockedForReview && (
-                  <input
-                    type="file"
-                    multiple
-                    accept=".pdf,.doc,.docx,image/*"
-                    onChange={(e) => {
-                      Array.from(e.target.files || []).forEach((f) =>
-                        handleFileUploadField(f, (att) =>
-                          setDraftForm((p) => ({
-                            ...p,
-                            technicalReport: {
-                              ...p.technicalReport,
-                              attachments: [...(p.technicalReport.attachments || []), att]
-                            }
-                          }))
-                        )
-                      );
-                    }}
-                  />
-                )}
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {(draftForm.technicalReport.attachments || []).map((att) => (
-                    <span key={att.id} className="px-3 py-1 rounded-lg bg-white border border-slate-300 flex items-center gap-2">
-                      <span>{att.name}</span>
-                      {!isLockedForReview && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDraftForm((p) => ({
-                              ...p,
-                              technicalReport: {
-                                ...p.technicalReport,
-                                attachments: p.technicalReport.attachments.filter((x) => x.id !== att.id)
-                              }
-                            }))
-                          }
-                          className="text-rose-600"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </span>
-                  ))}
-                </div>
-              </div>
             </div>
           )}
 
-          {/* بخش سوم: بوم مدل کسب‌وکار گرافیکی ۹ بخشی (Business Model Canvas) */}
-          {activeFormStep === 'sec3' && (
-            <div className="space-y-5 text-xs">
-              <div className="border-b border-slate-100 pb-3">
-                <h3 className="text-base font-extrabold text-[#0f294a]">
-                  بوم مدل کسب‌وکار شرکت (Business Model Canvas)
-                </h3>
-                <p className="text-slate-500 mt-0.5">
-                  هر یک از ۹ جزء اصلی مدل کسب‌وکار شرکت را در کادر اختصاصی خود تکمیل نمایید.
-                </p>
-              </div>
-
-              {/* چیدمان گرافیکی بوم استاندارد کسب‌وکار */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 bg-slate-100 p-4 rounded-2xl border border-slate-300">
-                {BMC_BLOCKS_CONFIG.map((block) => (
-                  <div
-                    key={block.id}
-                    className={`bg-white rounded-xl p-3.5 border shadow-xs flex flex-col justify-between ${
-                      block.id === 'valuePropositions'
-                        ? 'border-blue-400 ring-1 ring-blue-200'
-                        : 'border-slate-200'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-extrabold text-slate-900">{block.title}</span>
-                        <span className="text-[10px] font-mono text-slate-400">{block.en}</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mb-2">{block.hint}</p>
-                    </div>
-                    <textarea
-                      rows={4}
-                      disabled={isLockedForReview}
-                      value={draftForm.businessModelCanvas[block.id] || ''}
-                      onChange={(e) =>
-                        setDraftForm({
-                          ...draftForm,
-                          businessModelCanvas: {
-                            ...draftForm.businessModelCanvas,
-                            [block.id]: e.target.value
-                          }
-                        })
-                      }
-                      placeholder="موارد کلیدی را وارد کنید..."
-                      className="w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50/60 focus:bg-white focus:border-blue-500 text-xs leading-5 outline-none"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* بخش چهارم: برنامه یک‌ساله تجاری‌سازی و برنامه زمان‌بندی ۴ فصل */}
-          {activeFormStep === 'sec4' && (
-            <div className="space-y-6 text-xs">
-              <div className="border-b border-slate-100 pb-3">
-                <h3 className="text-base font-extrabold text-[#0f294a]">
-                  برنامه یک‌ساله ورود به بازار و تجاری‌سازی محصول
-                </h3>
-                <p className="text-slate-500 mt-0.5">
-                  اهداف کمی فروش، برنامه بازاریابی و برنامه عملیاتی چهار فصل سال پیش‌رو را تکمیل نمایید.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
-                  <label className="block font-bold text-slate-700 mb-1">شرح کلی برنامه یک‌ساله تجاری‌سازی</label>
+          {step === 3 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {[
+                { key: 'keyPartners', title: '۸. شرکای کلیدی' },
+                { key: 'keyActivities', title: '۷. فعالیت‌های کلیدی' },
+                { key: 'valuePropositions', title: '۲. ارزش پیشنهادی' },
+                { key: 'customerRelationships', title: '۴. ارتباط با مشتریان' },
+                { key: 'customerSegments', title: '۱. بخش‌های مشتریان' },
+                { key: 'keyResources', title: '۶. منابع کلیدی' },
+                { key: 'channels', title: '۳. کانال‌های توزیع' },
+                { key: 'costStructure', title: '۹. ساختار هزینه‌ها' },
+                { key: 'revenueStreams', title: '۵. جریان‌های درآمدی' }
+              ].map((box) => (
+                <div key={box.key} className="p-3 rounded-xl bg-slate-50 border">
+                  <label className="block font-bold text-blue-900 mb-1">{box.title}</label>
                   <textarea
                     rows={3}
-                    disabled={isLockedForReview}
-                    value={draftForm.commercializationPlan.generalOverview}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        commercializationPlan: { ...draftForm.commercializationPlan, generalOverview: e.target.value }
-                      })
-                    }
-                    className="w-full p-3 rounded-xl border border-slate-300"
+                    value={reqData.section3[box.key]}
+                    onChange={(e) => setReqData({ ...reqData, section3: { ...reqData.section3, [box.key]: e.target.value } })}
+                    className="w-full p-2 rounded-lg border bg-white"
                   />
                 </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">بازار هدف</label>
-                  <input
-                    type="text"
-                    disabled={isLockedForReview}
-                    value={draftForm.commercializationPlan.targetMarket}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        commercializationPlan: { ...draftForm.commercializationPlan, targetMarket: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">مشتریان هدف</label>
-                  <input
-                    type="text"
-                    disabled={isLockedForReview}
-                    value={draftForm.commercializationPlan.targetCustomers}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        commercializationPlan: { ...draftForm.commercializationPlan, targetCustomers: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">راهبرد ورود به بازار (Go-To-Market)</label>
-                  <input
-                    type="text"
-                    disabled={isLockedForReview}
-                    value={draftForm.commercializationPlan.goToMarketStrategy}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        commercializationPlan: { ...draftForm.commercializationPlan, goToMarketStrategy: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">برنامه بازاریابی و فروش</label>
-                  <input
-                    type="text"
-                    disabled={isLockedForReview}
-                    value={draftForm.commercializationPlan.marketingAndSalesPlan}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        commercializationPlan: { ...draftForm.commercializationPlan, marketingAndSalesPlan: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">برنامه توسعه محصول</label>
-                  <input
-                    type="text"
-                    disabled={isLockedForReview}
-                    value={draftForm.commercializationPlan.productDevelopmentPlan}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        commercializationPlan: { ...draftForm.commercializationPlan, productDevelopmentPlan: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">برنامه تأمین منابع مالی</label>
-                  <input
-                    type="text"
-                    disabled={isLockedForReview}
-                    value={draftForm.commercializationPlan.financialFundingPlan}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        commercializationPlan: { ...draftForm.commercializationPlan, financialFundingPlan: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">شرکای تجاری و صنعتی موردنیاز</label>
-                  <input
-                    type="text"
-                    disabled={isLockedForReview}
-                    value={draftForm.commercializationPlan.requiredPartners}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        commercializationPlan: { ...draftForm.commercializationPlan, requiredPartners: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">اهداف کمی و شاخص‌های کلیدی عملکرد (KPI)</label>
-                  <input
-                    type="text"
-                    disabled={isLockedForReview}
-                    value={draftForm.commercializationPlan.kpis}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        commercializationPlan: { ...draftForm.commercializationPlan, kpis: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                  />
-                </div>
-              </div>
-
-              {/* شاخص‌های عددی پیش‌بینی سال آینده */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-2xl bg-blue-50/60 border border-blue-200">
-                <div>
-                  <label className="block font-bold text-blue-950 mb-1">پیش‌بینی میزان فروش سال آینده (ریال)</label>
-                  <input
-                    type="number"
-                    dir="ltr"
-                    disabled={isLockedForReview}
-                    value={draftForm.commercializationPlan.forecastSalesAmount}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        commercializationPlan: { ...draftForm.commercializationPlan, forecastSalesAmount: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-blue-950 mb-1">پیش‌بینی تعداد مشتریان سال آینده</label>
-                  <input
-                    type="number"
-                    dir="ltr"
-                    disabled={isLockedForReview}
-                    value={draftForm.commercializationPlan.forecastCustomersCount}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        commercializationPlan: { ...draftForm.commercializationPlan, forecastCustomersCount: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-blue-950 mb-1">پیش‌بینی تعداد قراردادهای فروش</label>
-                  <input
-                    type="number"
-                    dir="ltr"
-                    disabled={isLockedForReview}
-                    value={draftForm.commercializationPlan.forecastContractsCount}
-                    onChange={(e) =>
-                      setDraftForm({
-                        ...draftForm,
-                        commercializationPlan: { ...draftForm.commercializationPlan, forecastContractsCount: e.target.value }
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                  />
-                </div>
-              </div>
-
-              {/* جدول برنامه عملیاتی در ۴ بازه زمانی سه‌ماهه */}
-              <div className="space-y-3">
-                <h4 className="font-bold text-sm text-slate-900">برنامه زمان‌بندی اجرایی در چهار فصل (سه‌ماهه اول تا چهارم)</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {(draftForm.commercializationPlan.quarters || []).map((q, idx) => (
-                    <div key={q.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
-                      <span className="font-extrabold text-blue-900 block">{q.title}</span>
-                      <input
-                        type="text"
-                        placeholder="اقدامات کلیدی این فصل..."
-                        disabled={isLockedForReview}
-                        value={q.actions}
-                        onChange={(e) => {
-                          const nextQ = [...draftForm.commercializationPlan.quarters];
-                          nextQ[idx] = { ...q, actions: e.target.value };
-                          setDraftForm({ ...draftForm, commercializationPlan: { ...draftForm.commercializationPlan, quarters: nextQ } });
-                        }}
-                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 bg-white"
-                      />
-                      <input
-                        type="text"
-                        placeholder="خروجی مورد انتظار..."
-                        disabled={isLockedForReview}
-                        value={q.expectedOutput}
-                        onChange={(e) => {
-                          const nextQ = [...draftForm.commercializationPlan.quarters];
-                          nextQ[idx] = { ...q, expectedOutput: e.target.value };
-                          setDraftForm({ ...draftForm, commercializationPlan: { ...draftForm.commercializationPlan, quarters: nextQ } });
-                        }}
-                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 bg-white"
-                      />
-                      <input
-                        type="text"
-                        placeholder="شاخص سنجش تحقق..."
-                        disabled={isLockedForReview}
-                        value={q.metric}
-                        onChange={(e) => {
-                          const nextQ = [...draftForm.commercializationPlan.quarters];
-                          nextQ[idx] = { ...q, metric: e.target.value };
-                          setDraftForm({ ...draftForm, commercializationPlan: { ...draftForm.commercializationPlan, quarters: nextQ } });
-                        }}
-                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 bg-white"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* بخش پنجم: مستندات فروش و قراردادهای تجاری */}
-          {activeFormStep === 'sec5' && (
-            <div className="space-y-6 text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                <div>
-                  <h3 className="text-base font-extrabold text-[#0f294a]">
-                    مستندات فروش و قراردادهای تجاری
-                  </h3>
-                  <p className="text-slate-500 mt-0.5">
-                    شواهد واقعی ورود به بازار، قراردادهای منعقده و مبلغ فروش تحقق‌یافته را ثبت نمایید.
-                  </p>
-                </div>
-                {!isLockedForReview && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDraftForm((p) => ({
-                        ...p,
-                        contracts: [
-                          ...(p.contracts || []),
-                          {
-                            id: 'cnt-' + Date.now(),
-                            productName: '',
-                            clientOrg: '',
-                            clientType: 'خصوصی',
-                            subject: '',
-                            contractAmount: 0,
-                            contractDate: getTodayJalali(),
-                            duration: '',
-                            status: 'در حال اجرا',
-                            realizedSalesAmount: 0,
-                            notes: '',
-                            attachments: { contractFile: null, invoiceFile: null, deliveryFile: null, otherFile: null }
-                          }
-                        ]
-                      }))
-                    }
-                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1.5"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>افزودن قرارداد فروش جدید</span>
-                  </button>
-                )}
-              </div>
-
-              {(draftForm.contracts || []).length === 0 ? (
-                <div className="p-8 rounded-2xl bg-slate-50 border border-slate-200 text-center text-slate-500">
-                  هنوز قراردادی ثبت نشده است. برای افزودن قرارداد فروش روی دکمه بالا کلیک کنید.
-                </div>
-              ) : (
-                <div className="space-y-5">
-                  {draftForm.contracts.map((cnt, idx) => (
-                    <div key={cnt.id} className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
-                      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                        <span className="font-extrabold text-sm text-[#0f294a]">
-                          قرارداد شماره {toPersianDigits(idx + 1)}
-                        </span>
-                        {!isLockedForReview && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setDraftForm((p) => ({
-                                ...p,
-                                contracts: p.contracts.filter((_, i) => i !== idx)
-                              }))
-                            }
-                            className="text-rose-600 hover:underline flex items-center gap-1"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>حذف قرارداد</span>
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div>
-                          <label className="block font-bold mb-1">نام محصول یا خدمت فروخته‌شده *</label>
-                          <input
-                            type="text"
-                            disabled={isLockedForReview}
-                            value={cnt.productName}
-                            onChange={(e) => {
-                              const next = [...draftForm.contracts];
-                              next[idx] = { ...cnt, productName: e.target.value };
-                              setDraftForm({ ...draftForm, contracts: next });
-                            }}
-                            className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-bold mb-1">نام نهاد یا سازمان طرف قرارداد *</label>
-                          <input
-                            type="text"
-                            disabled={isLockedForReview}
-                            value={cnt.clientOrg}
-                            onChange={(e) => {
-                              const next = [...draftForm.contracts];
-                              next[idx] = { ...cnt, clientOrg: e.target.value };
-                              setDraftForm({ ...draftForm, contracts: next });
-                            }}
-                            className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-bold mb-1">نوع مشتری</label>
-                          <select
-                            disabled={isLockedForReview}
-                            value={cnt.clientType}
-                            onChange={(e) => {
-                              const next = [...draftForm.contracts];
-                              next[idx] = { ...cnt, clientType: e.target.value };
-                              setDraftForm({ ...draftForm, contracts: next });
-                            }}
-                            className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                          >
-                            <option value="دولتی">دولتی</option>
-                            <option value="خصوصی">خصوصی</option>
-                            <option value="عمومی غیردولتی">عمومی غیردولتی</option>
-                            <option value="دانشگاهی و پژوهشی">دانشگاهی و پژوهشی</option>
-                          </select>
-                        </div>
-                        <div className="md:col-span-3">
-                          <label className="block font-bold mb-1">موضوع قرارداد</label>
-                          <input
-                            type="text"
-                            disabled={isLockedForReview}
-                            value={cnt.subject}
-                            onChange={(e) => {
-                              const next = [...draftForm.contracts];
-                              next[idx] = { ...cnt, subject: e.target.value };
-                              setDraftForm({ ...draftForm, contracts: next });
-                            }}
-                            className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-bold mb-1">مبلغ کل قرارداد (ریال)</label>
-                          <input
-                            type="number"
-                            dir="ltr"
-                            disabled={isLockedForReview}
-                            value={cnt.contractAmount}
-                            onChange={(e) => {
-                              const next = [...draftForm.contracts];
-                              next[idx] = { ...cnt, contractAmount: Number(e.target.value) };
-                              setDraftForm({ ...draftForm, contracts: next });
-                            }}
-                            className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-bold text-emerald-800 mb-1">مبلغ فروش تحقق‌یافته / دریافتی (ریال)</label>
-                          <input
-                            type="number"
-                            dir="ltr"
-                            disabled={isLockedForReview}
-                            value={cnt.realizedSalesAmount}
-                            onChange={(e) => {
-                              const next = [...draftForm.contracts];
-                              next[idx] = { ...cnt, realizedSalesAmount: Number(e.target.value) };
-                              setDraftForm({ ...draftForm, contracts: next });
-                            }}
-                            className="w-full px-3 py-2 rounded-xl border border-emerald-300 bg-emerald-50/40"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-bold mb-1">وضعیت قرارداد</label>
-                          <select
-                            disabled={isLockedForReview}
-                            value={cnt.status}
-                            onChange={(e) => {
-                              const next = [...draftForm.contracts];
-                              next[idx] = { ...cnt, status: e.target.value };
-                              setDraftForm({ ...draftForm, contracts: next });
-                            }}
-                            className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                          >
-                            <option value="فعال">فعال</option>
-                            <option value="در حال اجرا">در حال اجرا</option>
-                            <option value="خاتمه‌یافته">خاتمه‌یافته</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block font-bold mb-1">تاریخ انعقاد (شمسی)</label>
-                          <input
-                            type="text"
-                            dir="ltr"
-                            disabled={isLockedForReview}
-                            value={cnt.contractDate}
-                            onChange={(e) => {
-                              const next = [...draftForm.contracts];
-                              next[idx] = { ...cnt, contractDate: e.target.value };
-                              setDraftForm({ ...draftForm, contracts: next });
-                            }}
-                            className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-bold mb-1">مدت قرارداد</label>
-                          <input
-                            type="text"
-                            disabled={isLockedForReview}
-                            value={cnt.duration}
-                            onChange={(e) => {
-                              const next = [...draftForm.contracts];
-                              next[idx] = { ...cnt, duration: e.target.value };
-                              setDraftForm({ ...draftForm, contracts: next });
-                            }}
-                            className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-bold mb-1">توضیحات تکمیلی</label>
-                          <input
-                            type="text"
-                            disabled={isLockedForReview}
-                            value={cnt.notes}
-                            onChange={(e) => {
-                              const next = [...draftForm.contracts];
-                              next[idx] = { ...cnt, notes: e.target.value };
-                              setDraftForm({ ...draftForm, contracts: next });
-                            }}
-                            className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                          />
-                        </div>
-                      </div>
-
-                      {/* پیوست‌های قرارداد */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                        {[
-                          { key: 'contractFile', label: 'فایل قرارداد فروش' },
-                          { key: 'invoiceFile', label: 'فاکتور فروش' },
-                          { key: 'deliveryFile', label: 'مستندات تحویل کالا/خدمات' }
-                        ].map((attDef) => {
-                          const fObj = cnt.attachments?.[attDef.key];
-                          return (
-                            <div key={attDef.key} className="p-2.5 rounded-xl bg-white border border-slate-200">
-                              <span className="font-semibold text-slate-700 block mb-1">{attDef.label}</span>
-                              {fObj ? (
-                                <span className="text-emerald-700 font-bold">{fObj.name}</span>
-                              ) : (
-                                <input
-                                  type="file"
-                                  disabled={isLockedForReview}
-                                  accept=".pdf,image/*"
-                                  onChange={(e) =>
-                                    handleFileUploadField(e.target.files?.[0], (uploaded) => {
-                                      const next = [...draftForm.contracts];
-                                      next[idx] = {
-                                        ...cnt,
-                                        attachments: { ...(cnt.attachments || {}), [attDef.key]: uploaded }
-                                      };
-                                      setDraftForm({ ...draftForm, contracts: next });
-                                    })
-                                  }
-                                  className="text-[11px]"
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* باکس محاسبه خودکار تجمیعی قراردادها و فروش تحقق‌یافته */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-5 rounded-2xl bg-[#0f294a] text-white">
-                <div className="text-center">
-                  <span className="text-xs text-sky-300 block mb-1">تعداد کل قراردادهای ثبت‌شده</span>
-                  <span className="text-2xl font-extrabold">{toPersianDigits(contractsSummary.count)} قرارداد</span>
-                </div>
-                <div className="text-center border-y sm:border-y-0 sm:border-x border-blue-800 py-3 sm:py-0">
-                  <span className="text-xs text-sky-300 block mb-1">مجموع مبلغ کل قراردادها</span>
-                  <span className="text-xl font-extrabold">
-                    {toPersianDigits(contractsSummary.totalContractValue.toLocaleString())} ریال
-                  </span>
-                </div>
-                <div className="text-center">
-                  <span className="text-xs text-emerald-300 block mb-1">مجموع فروش تحقق‌یافته</span>
-                  <span className="text-xl font-extrabold text-emerald-300">
-                    {toPersianDigits(contractsSummary.totalRealizedSales.toLocaleString())} ریال
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* پیش‌نمایش جامع کل اطلاعات پیش از ارسال نهایی */}
-          {activeFormStep === 'preview' && (
-            <UpgradeRequestFullPreview request={draftForm} />
-          )}
-
-          {/* تاریخچه کامل اقدامات و نسخه‌ها */}
-          {activeFormStep === 'history' && (
-            <div className="space-y-4 text-xs">
-              <h3 className="text-base font-extrabold text-[#0f294a]">
-                تاریخچه اقدامات، اصلاحات و نسخه‌های ارسال‌شده
-              </h3>
-              <div className="space-y-2.5">
-                {(draftForm.history || []).map((h) => (
-                  <div key={h.id} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                    <div className="flex justify-between text-slate-500 mb-1">
-                      <span className="font-bold text-slate-800">{h.user}</span>
-                      <span dir="ltr">{toPersianDigits(h.date)}</span>
-                    </div>
-                    <p className="font-semibold text-blue-950">{h.action}</p>
-                    {h.details && <p className="text-slate-600 mt-1">{h.details}</p>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* نوار دکمه‌های ذخیره پیش‌نویس و ارسال نهایی */}
-          {!isApproved && !isLockedForReview && (
-            <div className="mt-8 pt-5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => onSaveRequest(draftForm, false)}
-                className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold"
-              >
-                ذخیره اطلاعات به‌عنوان پیش‌نویس
-              </button>
-
-              <button
-                type="button"
-                onClick={handleValidateAndSubmit}
-                className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-extrabold shadow-md flex items-center gap-2"
-              >
-                <Send className="w-4 h-4" />
-                <span>
-                  {draftForm.status === 'عودت‌شده برای اصلاح'
-                    ? 'ثبت اصلاحات و ارسال مجدد به مرکز رشد'
-                    : 'تأیید نهایی و ارسال به مرکز رشد'}
-                </span>
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// نمایش جامع تمام ۵ بخش پرونده تبدیل وضعیت (مشترک در پیش‌نمایش شرکت و بررسی کارشناس)
-function UpgradeRequestFullPreview({ request }) {
-  const reg = request.registrationInfo || {};
-  const bmc = request.businessModelCanvas || {};
-  const cp = request.commercializationPlan || {};
-  const contracts = request.contracts || [];
-  const totalContracts = contracts.reduce((s, c) => s + (Number(c.contractAmount) || 0), 0);
-  const totalRealized = contracts.reduce((s, c) => s + (Number(c.realizedSalesAmount) || 0), 0);
-
-  return (
-    <div className="space-y-6 text-xs">
-      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-        <h4 className="font-extrabold text-sm text-[#0f294a]">۱. اطلاعات ثبتی و ساختار حقوقی</h4>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div>نام شرکت: <b>{reg.fullCompanyName}</b></div>
-          <div>نوع شخصیت: <b>{reg.companyType}</b></div>
-          <div>شناسه ملی: <b dir="ltr">{toPersianDigits(reg.nationalId)}</b></div>
-          <div>شماره ثبت: <b dir="ltr">{toPersianDigits(reg.registrationNumber)}</b></div>
-          <div>تاریخ ثبت: <b dir="ltr">{toPersianDigits(reg.establishedDate)}</b></div>
-          <div>مدیرعامل: <b>{reg.ceoName}</b></div>
-          <div>تلفن: <b dir="ltr">{toPersianDigits(reg.companyPhone)}</b></div>
-          <div>ایمیل: <b>{reg.officialEmail}</b></div>
-        </div>
-        {(reg.shareholders?.length || 0) > 0 && (
-          <div className="pt-2">
-            <span className="font-bold block mb-1">سهامداران:</span>
-            <div className="flex flex-wrap gap-2">
-              {reg.shareholders.map((s) => (
-                <span key={s.id} className="px-2.5 py-1 rounded-lg bg-white border border-slate-200">
-                  {s.name} ({toPersianDigits(s.sharePercent)}٪ — {s.role})
-                </span>
               ))}
             </div>
+          )}
+
+          {step === 4 && (
+            <div className="space-y-4">
+              <div>
+                <label className="block font-bold mb-1">شرح کلی برنامه یک‌ساله تجاری‌سازی</label>
+                <textarea rows={3} value={reqData.section4.overview} onChange={(e) => setReqData({ ...reqData, section4: { ...reqData.section4, overview: e.target.value } })} className="w-full p-3 rounded-xl border" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold mb-1">پیش‌بینی فروش سال آینده (ریال)</label>
+                  <input type="text" dir="ltr" value={reqData.section4.forecastSales} onChange={(e) => setReqData({ ...reqData, section4: { ...reqData.section4, forecastSales: e.target.value } })} className="w-full px-3 py-2 rounded-xl border" />
+                </div>
+                <div>
+                  <label className="block font-bold mb-1">پیش‌بینی تعداد مشتریان</label>
+                  <input type="text" dir="ltr" value={reqData.section4.forecastCustomers} onChange={(e) => setReqData({ ...reqData, section4: { ...reqData.section4, forecastCustomers: e.target.value } })} className="w-full px-3 py-2 rounded-xl border" />
+                </div>
+                <div>
+                  <label className="block font-bold mb-1">پیش‌بینی قراردادهای فروش</label>
+                  <input type="text" dir="ltr" value={reqData.section4.forecastContracts} onChange={(e) => setReqData({ ...reqData, section4: { ...reqData.section4, forecastContracts: e.target.value } })} className="w-full px-3 py-2 rounded-xl border" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 5 && (
+            <div className="space-y-4">
+              <button
+                type="button"
+                onClick={() =>
+                  setReqData({
+                    ...reqData,
+                    section5: {
+                      contracts: [
+                        ...(reqData.section5.contracts || []),
+                        { id: 'cnt-' + Date.now(), productName: '', clientOrg: '', contractAmount: 0, realizedSales: 0, status: 'در حال اجرا' }
+                      ]
+                    }
+                  })
+                }
+                className="px-3.5 py-2 rounded-xl bg-blue-600 text-white font-bold"
+              >
+                + افزودن قرارداد فروش
+              </button>
+
+              {(reqData.section5.contracts || []).map((cnt, idx) => (
+                <div key={cnt.id} className="p-4 rounded-xl bg-slate-50 border grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <input
+                    type="text"
+                    placeholder="نام محصول / خدمت"
+                    value={cnt.productName}
+                    onChange={(e) => {
+                      const next = [...reqData.section5.contracts];
+                      next[idx] = { ...cnt, productName: e.target.value };
+                      setReqData({ ...reqData, section5: { contracts: next } });
+                    }}
+                    className="px-3 py-2 rounded-lg border bg-white"
+                  />
+                  <input
+                    type="text"
+                    placeholder="سازمان طرف قرارداد"
+                    value={cnt.clientOrg}
+                    onChange={(e) => {
+                      const next = [...reqData.section5.contracts];
+                      next[idx] = { ...cnt, clientOrg: e.target.value };
+                      setReqData({ ...reqData, section5: { contracts: next } });
+                    }}
+                    className="px-3 py-2 rounded-lg border bg-white"
+                  />
+                  <input
+                    type="number"
+                    placeholder="مبلغ قرارداد (ریال)"
+                    value={cnt.contractAmount}
+                    onChange={(e) => {
+                      const next = [...reqData.section5.contracts];
+                      next[idx] = { ...cnt, contractAmount: Number(e.target.value) };
+                      setReqData({ ...reqData, section5: { contracts: next } });
+                    }}
+                    className="px-3 py-2 rounded-lg border bg-white"
+                  />
+                  <input
+                    type="number"
+                    placeholder="فروش تحقق‌یافته (ریال)"
+                    value={cnt.realizedSales}
+                    onChange={(e) => {
+                      const next = [...reqData.section5.contracts];
+                      next[idx] = { ...cnt, realizedSales: Number(e.target.value) };
+                      setReqData({ ...reqData, section5: { contracts: next } });
+                    }}
+                    className="px-3 py-2 rounded-lg border bg-white"
+                  />
+                </div>
+              ))}
+
+              <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 flex flex-wrap gap-6 font-bold text-blue-950">
+                <span>تعداد کل قراردادها: {toPersianDigits(reqData.section5.contracts.length)}</span>
+                <span>مجموع مبلغ قراردادها: {toPersianDigits(totalContractAmount.toLocaleString())} ریال</span>
+                <span>مجموع فروش تحقق‌یافته: {toPersianDigits(totalRealizedSales.toLocaleString())} ریال</span>
+              </div>
+            </div>
+          )}
+
+          <div className="pt-4 border-t flex justify-end gap-2">
+            <button onClick={() => onSaveRequest(reqData, false)} className="px-4 py-2 rounded-xl bg-slate-200 font-bold">
+              ذخیره پیش‌نویس
+            </button>
+            <button onClick={() => onSaveRequest(reqData, true)} className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold">
+              تأیید نهایی و ارسال به مرکز رشد
+            </button>
           </div>
-        )}
-      </div>
-
-      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-        <h4 className="font-extrabold text-sm text-[#0f294a]">۲. گزارش پیشرفت فنی محصول</h4>
-        <div
-          className="prose prose-sm max-w-none bg-white p-4 rounded-xl border border-slate-200 leading-6"
-          dangerouslySetInnerHTML={{ __html: request.technicalReport?.content || '<p>ثبت نشده</p>' }}
-        />
-      </div>
-
-      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-        <h4 className="font-extrabold text-sm text-[#0f294a]">۳. بوم مدل کسب‌وکار (۹ جزء)</h4>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-          {BMC_BLOCKS_CONFIG.map((b) => (
-            <div key={b.id} className="p-3 rounded-xl bg-white border border-slate-200">
-              <span className="font-bold text-blue-900 block mb-1">{b.title}</span>
-              <p className="text-slate-700 leading-5">{bmc[b.id] || '—'}</p>
-            </div>
-          ))}
         </div>
-      </div>
-
-      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-        <h4 className="font-extrabold text-sm text-[#0f294a]">۴. برنامه یک‌ساله تجاری‌سازی و برنامه سه‌ماهه</h4>
-        <p>شرح برنامه: <b>{cp.generalOverview || '—'}</b></p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>پیش‌بینی فروش سال آینده: <b>{toPersianDigits(Number(cp.forecastSalesAmount || 0).toLocaleString())} ریال</b></div>
-          <div>پیش‌بینی مشتریان: <b>{toPersianDigits(cp.forecastCustomersCount || 0)}</b></div>
-          <div>پیش‌بینی قراردادها: <b>{toPersianDigits(cp.forecastContractsCount || 0)}</b></div>
-        </div>
-      </div>
-
-      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-        <h4 className="font-extrabold text-sm text-[#0f294a]">
-          ۵. قراردادهای فروش ({toPersianDigits(contracts.length)} قرارداد | جمع قراردادها: {toPersianDigits(totalContracts.toLocaleString())} ریال | فروش تحقق‌یافته: {toPersianDigits(totalRealized.toLocaleString())} ریال)
-        </h4>
-        {contracts.map((c) => (
-          <div key={c.id} className="p-3 rounded-xl bg-white border border-slate-200 flex flex-wrap justify-between gap-2">
-            <div>
-              <b>{c.productName}</b> — طرف قرارداد: {c.clientOrg} ({c.clientType})
-            </div>
-            <div>
-              مبلغ قرارداد: <b>{toPersianDigits(Number(c.contractAmount).toLocaleString())}</b> | تحقق‌یافته: <b className="text-emerald-700">{toPersianDigits(Number(c.realizedSalesAmount).toLocaleString())} ریال</b>
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
 }
 
-// ۹-ب. کارتابل اختصاصی مرکز رشد برای بررسی، عودت بخشی و تأیید نهایی تبدیل وضعیت
-function CenterUpgradeInboxView({
-  companies,
-  upgradeRequests,
-  adminUser,
-  onReturnRequest,
-  onApproveRequest,
-  showToast
-}) {
-  const canReview = ['system_admin', 'org_manager', 'expert'].includes(adminUser?.secretariatRole);
+function CenterUpgradeInboxView({ upgradeState, onReturnRequest, onApproveRequest }) {
   const [selectedReqId, setSelectedReqId] = useState(null);
   const [internalNote, setInternalNote] = useState('');
-  const [generalReturnNote, setGeneralReturnNote] = useState('');
-  const [sectionFixes, setSectionFixes] = useState({
-    sec1: { needsFix: false, note: '' },
-    sec2: { needsFix: false, note: '' },
-    sec3: { needsFix: false, note: '' },
-    sec4: { needsFix: false, note: '' },
-    sec5: { needsFix: false, note: '' }
-  });
+  const [returnNote, setReturnNote] = useState('');
   const [showApproveConfirmModal, setShowApproveConfirmModal] = useState(false);
 
-  const selectedReq = upgradeRequests.find((r) => r.id === selectedReqId) || null;
-
-  const openReviewModal = (req) => {
-    setSelectedReqId(req.id);
-    setInternalNote(req.internalExpertNotes || '');
-    setGeneralReturnNote(req.generalReturnNote || '');
-    setSectionFixes(
-      req.sectionCorrections || {
-        sec1: { needsFix: false, note: '' },
-        sec2: { needsFix: false, note: '' },
-        sec3: { needsFix: false, note: '' },
-        sec4: { needsFix: false, note: '' },
-        sec5: { needsFix: false, note: '' }
-      }
-    );
-  };
-
-  const handleReturnSubmit = () => {
-    if (!canReview) {
-      showToast('نقش فعلی شما مجوز بررسی کارشناسی ندارد.', 'error');
-      return;
-    }
-    if (!generalReturnNote.trim()) {
-      showToast('درج توضیحات کلی و اعلام دقیق نواقص هنگام عودت الزامی است.', 'error');
-      return;
-    }
-    onReturnRequest(selectedReq.id, generalReturnNote, sectionFixes, internalNote);
-    setSelectedReqId(null);
-  };
+  const selectedReq = upgradeState.requests.find((r) => r.id === selectedReqId);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-extrabold text-[#0f294a]">
-          کارتابل درخواست‌های تبدیل وضعیت (پیش‌رشد به رشد)
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          بررسی پرونده‌های ارسالی شرکت‌های پیش‌رشد، ثبت نظر کارشناسی، عودت جهت اصلاح یا تأیید نهایی ارتقا به دوره رشد
-        </p>
-      </div>
-
-      {/* جدول کارتابل درخواست‌های تبدیل وضعیت */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-right text-xs">
-            <thead className="bg-slate-50 text-slate-700 border-b border-slate-200">
-              <tr>
-                <th className="py-3.5 px-4">ردیف</th>
-                <th className="py-3.5 px-4">نام شرکت</th>
-                <th className="py-3.5 px-4">شناسه ملی</th>
-                <th className="py-3.5 px-4">نام مدیرعامل</th>
-                <th className="py-3.5 px-4">تاریخ ارسال درخواست</th>
-                <th className="py-3.5 px-4">وضعیت درخواست</th>
-                <th className="py-3.5 px-4">کارشناس مسئول</th>
-                <th className="py-3.5 px-4">آخرین اقدام</th>
-                <th className="py-3.5 px-4 text-center">عملیات</th>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 text-xs">
+      <h1 className="text-xl font-extrabold text-[#0f294a]">کارتابل درخواست‌های تبدیل وضعیت (پیش‌رشد به رشد)</h1>
+      <div className="bg-white rounded-2xl border overflow-hidden">
+        <table className="w-full text-right">
+          <thead className="bg-slate-50 border-b">
+            <tr>
+              <th className="py-3 px-4">نام شرکت</th>
+              <th className="py-3 px-4">تاریخ ارسال</th>
+              <th className="py-3 px-4">وضعیت درخواست</th>
+              <th className="py-3 px-4">عملیات</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {upgradeState.requests.map((r) => (
+              <tr key={r.id}>
+                <td className="py-3 px-4 font-bold">{r.companyName}</td>
+                <td className="py-3 px-4">{toPersianDigits(r.submittedAt || r.startedAt)}</td>
+                <td className="py-3 px-4">{r.status}</td>
+                <td className="py-3 px-4">
+                  <button onClick={() => setSelectedReqId(r.id)} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-bold">
+                    بررسی پرونده
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {upgradeRequests.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="py-10 text-center text-slate-400">
-                    هیچ درخواست تبدیل وضعیتی ثبت نشده است.
-                  </td>
-                </tr>
-              ) : (
-                upgradeRequests.map((req, idx) => {
-                  const comp = companies.find((c) => c.id === req.companyId);
-                  const lastHist = (req.history || [])[req.history.length - 1];
-                  return (
-                    <tr key={req.id} className="hover:bg-slate-50">
-                      <td className="py-3.5 px-4">{toPersianDigits(idx + 1)}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-900">{req.companyName}</td>
-                      <td className="py-3.5 px-4 font-mono">
-                        {toPersianDigits(req.registrationInfo?.nationalId || comp?.nationalId || '—')}
-                      </td>
-                      <td className="py-3.5 px-4">{req.registrationInfo?.ceoName || comp?.ceoName || '—'}</td>
-                      <td className="py-3.5 px-4" dir="ltr">
-                        {toPersianDigits(req.submittedAt || 'پیش‌نویس')}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <UpgradeStatusBadge status={req.status} />
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600">{req.assignedExpert}</td>
-                      <td className="py-3.5 px-4 text-slate-500 max-w-[180px] truncate">
-                        {lastHist?.action || '—'}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <button
-                          onClick={() => openReviewModal(req)}
-                          className="px-3.5 py-1.5 rounded-xl bg-[#0f294a] hover:bg-blue-800 text-white font-bold"
-                        >
-                          بررسی پرونده
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
 
-      {/* مودال بررسی کامل ۵ بخش پرونده توسط کارشناس مرکز رشد */}
       {selectedReq && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-5xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto">
-            <div className="p-5 bg-[#0b1f3a] text-white flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <h3 className="font-extrabold text-base">
-                  بررسی کارشناسی پرونده تبدیل وضعیت: {selectedReq.companyName}
-                </h3>
-                <UpgradeStatusBadge status={selectedReq.status} />
-              </div>
-              <button onClick={() => setSelectedReqId(null)} className="text-slate-300 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 max-h-[80vh] overflow-y-auto space-y-6 text-xs">
-              <UpgradeRequestFullPreview request={selectedReq} />
-
-              {/* پنل تصمیم‌گیری کارشناس مرکز رشد */}
-              {canReview && selectedReq.status !== 'تأییدشده و تبدیل وضعیت به رشد' && (
-                <div className="p-5 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-4">
-                  <h4 className="font-extrabold text-sm text-[#0f294a]">
-                    ثبت نظر کارشناسی، عودت جهت اصلاح یا تأیید نهایی
-                  </h4>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      یادداشت داخلی کارشناسی (فقط قابل مشاهده برای کارشناسان و مدیران مرکز):
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={internalNote}
-                      onChange={(e) => setInternalNote(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-slate-300 bg-white"
-                    />
-                  </div>
-
-                  <div className="p-4 rounded-xl bg-white border border-rose-200 space-y-3">
-                    <span className="font-bold text-rose-900 block">
-                      در صورت نیاز به عودت، بخش‌های نیازمند اصلاح و توضیح اختصاصی هر بخش را مشخص کنید:
-                    </span>
-                    <div className="space-y-2">
-                      {Object.entries(UPGRADE_SECTION_TITLES).map(([secKey, secTitle]) => (
-                        <div key={secKey} className="flex flex-col sm:flex-row sm:items-center gap-2">
-                          <label className="flex items-center gap-2 sm:w-72 font-semibold text-slate-800 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={sectionFixes[secKey]?.needsFix || false}
-                              onChange={(e) =>
-                                setSectionFixes({
-                                  ...sectionFixes,
-                                  [secKey]: { ...sectionFixes[secKey], needsFix: e.target.checked }
-                                })
-                              }
-                            />
-                            <span>{secTitle}</span>
-                          </label>
-                          {sectionFixes[secKey]?.needsFix && (
-                            <input
-                              type="text"
-                              placeholder="توضیح دقیق اصلاح موردنیاز در این بخش..."
-                              value={sectionFixes[secKey]?.note || ''}
-                              onChange={(e) =>
-                                setSectionFixes({
-                                  ...sectionFixes,
-                                  [secKey]: { ...sectionFixes[secKey], note: e.target.value }
-                                })
-                              }
-                              className="flex-1 px-3 py-1.5 rounded-lg border border-rose-300"
-                            />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-rose-900 mb-1">
-                        توضیحات کلی عودت برای شرکت (در صورت عودت الزامی است):
-                      </label>
-                      <input
-                        type="text"
-                        value={generalReturnNote}
-                        onChange={(e) => setGeneralReturnNote(e.target.value)}
-                        placeholder="شرح کلی نواقص پرونده جهت اطلاع نماینده شرکت..."
-                        className="w-full px-3 py-2 rounded-xl border border-rose-300"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={handleReturnSubmit}
-                      className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold flex items-center gap-1.5"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      <span>عودت درخواست به شرکت برای اصلاح</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowApproveConfirmModal(true)}
-                      className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold shadow-md flex items-center gap-1.5"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      <span>تأیید نهایی و تبدیل وضعیت شرکت به «رشد»</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+        <div className="bg-white rounded-2xl p-6 border border-blue-200 space-y-4">
+          <div className="flex justify-between items-center border-b pb-3">
+            <h3 className="font-bold text-base">بررسی پرونده تبدیل وضعیت: {selectedReq.companyName}</h3>
+            <button onClick={() => setSelectedReqId(null)}><X className="w-5 h-5" /></button>
+          </div>
+          <p className="bg-slate-50 p-3 rounded-xl leading-6">{selectedReq.section2?.reportText}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input type="text" placeholder="یادداشت داخلی کارشناسی..." value={internalNote} onChange={(e) => setInternalNote(e.target.value)} className="px-3 py-2 rounded-xl border" />
+            <input type="text" placeholder="توضیح عودت جهت اصلاح به شرکت..." value={returnNote} onChange={(e) => setReturnNote(e.target.value)} className="px-3 py-2 rounded-xl border" />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => {
+                onReturnRequest(selectedReq.id, { section2: returnNote }, internalNote);
+                setSelectedReqId(null);
+              }}
+              className="px-4 py-2 rounded-xl bg-rose-600 text-white font-bold"
+            >
+              عودت برای اصلاح
+            </button>
+            <button
+              onClick={() => setShowApproveConfirmModal(true)}
+              className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold"
+            >
+              تأیید نهایی و تبدیل به رشد
+            </button>
           </div>
         </div>
       )}
 
-      {/* پنجره تأیید نهایی تبدیل وضعیت شرکت به دوره رشد */}
       {showApproveConfirmModal && selectedReq && (
-        <div className="fixed inset-0 z-[60] bg-slate-950/70 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
-            <h4 className="font-extrabold text-base text-emerald-900">
-              تأیید نهایی تبدیل وضعیت از پیش‌رشد به رشد
-            </h4>
-            <p className="text-slate-700 leading-6">
-              آیا از تأیید نهایی پرونده شرکت <b>«{selectedReq.companyName}»</b> اطمینان دارید؟ با تأیید این مرحله، سطح شرکت در تمام بخش‌های سامانه از <b>«پیش‌رشد»</b> به <b>«دوره رشد»</b> تغییر یافته و تاریخ امروز به عنوان تاریخ تبدیل وضعیت ثبت خواهد شد.
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4">
+            <h4 className="font-extrabold text-sm">تأیید نهایی ارتقاء وضعیت به دوره رشد</h4>
+            <p className="text-slate-600">
+              با تأیید نهایی، وضعیت شرکت «{selectedReq.companyName}» در کل سامانه به «دوره رشد» تغییر خواهد کرد.
             </p>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowApproveConfirmModal(false)}
-                className="px-4 py-2 rounded-xl border border-slate-300 font-semibold"
-              >
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setShowApproveConfirmModal(false)} className="px-4 py-2 rounded-xl border font-semibold">
                 انصراف
               </button>
               <button
@@ -9023,6 +4827,705 @@ function CenterUpgradeInboxView({
               >
                 بله، تأیید نهایی و ارتقا به رشد
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// ۹. ماژول مدیریت اموال و تجهیزات تحویلی به شرکت‌ها
+// ============================================================================
+function AssetsDashboardView({ assetStats, onNavigate }) {
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      <h1 className="text-xl font-extrabold text-[#0f294a]">داشبورد مدیریت اموال و تجهیزات مرکز رشد</h1>
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+        {[
+          { label: 'کل اقلام ثبت‌شده', val: assetStats.totalRegistered },
+          { label: 'موجودی تحویل‌شده فعلی', val: assetStats.totalDelivered },
+          { label: 'در انتظار تأیید شرکت', val: assetStats.pendingConfirm },
+          { label: 'اقلام مستردشده', val: assetStats.totalReturned },
+          { label: 'دارای مغایرت', val: assetStats.discrepancyCount },
+          { label: 'شرکت‌های دارای اموال', val: assetStats.companiesWithAssets }
+        ].map((c, i) => (
+          <div key={i} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+            <span className="text-2xl font-extrabold text-[#0f294a] block mb-1">{toPersianDigits(c.val)}</span>
+            <span className="text-xs text-slate-600">{c.label}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-3 text-xs">
+        <button onClick={() => onNavigate('ast_manage')} className="px-4 py-2.5 rounded-xl bg-[#0f294a] text-white font-bold">
+          ثبت تحویل یا تغییر تعداد اموال
+        </button>
+        <button onClick={() => onNavigate('ast_minutes')} className="px-4 py-2.5 rounded-xl bg-blue-600 text-white font-bold">
+          صدور صورت‌جلسه تحویل و تحول
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AssetsManagementView({ companies, assetsState, setAssetsState, adminUser, showToast }) {
+  const [companyId, setCompanyId] = useState(companies[0]?.id || 'comp-1');
+  const [itemName, setItemName] = useState(DEFAULT_ASSET_ITEMS[0]);
+  const [customItemName, setCustomItemName] = useState('');
+  const [assetCode, setAssetCode] = useState('');
+  const [quantity, setQuantity] = useState(1);
+  const [eventModalAsset, setEventModalAsset] = useState(null);
+  const [eventType, setEventType] = useState('تحویل تکمیلی');
+  const [eventDelta, setEventDelta] = useState(1);
+  const [eventReason, setEventReason] = useState('');
+
+  const handleAddAsset = (e) => {
+    e.preventDefault();
+    const comp = companies.find((c) => c.id === companyId);
+    const finalName = itemName === 'سایر تجهیزات' && customItemName.trim() ? customItemName.trim() : itemName;
+    const newItem = {
+      id: 'ast-' + Date.now(),
+      companyId,
+      companyName: comp?.name || '',
+      itemName: finalName,
+      assetCode,
+      category: 'تجهیزات اداری',
+      physicalCondition: 'سالم',
+      deliveryDate: getTodayJalali(),
+      deliveredBy: adminUser.name,
+      receivedBy: comp?.ceoName || '',
+      confirmationStatus: 'ارسال‌شده برای تأیید شرکت',
+      events: [
+        {
+          id: 'ev-' + Date.now(),
+          type: 'تحویل اولیه',
+          quantityDelta: Number(quantity) || 1,
+          date: getTodayJalali(),
+          user: adminUser.name,
+          reason: 'تحویل اولیه اموال'
+        }
+      ]
+    };
+    setAssetsState((prev) => ({ ...prev, items: [newItem, ...prev.items] }));
+    setAssetCode('');
+    setCustomItemName('');
+    showToast('قلم اموال ثبت و برای تأیید الکترونیکی شرکت ارسال شد.');
+  };
+
+  const handleRecordEvent = () => {
+    if (!eventReason.trim()) {
+      showToast('ثبت دلیل تغییر اموال الزامی است.', 'error');
+      return;
+    }
+    const isDecrease = ['استرداد به مرکز رشد', 'ثبت کسری', 'ثبت خرابی', 'ثبت مفقودی'].includes(eventType);
+    const signedDelta = isDecrease ? -Math.abs(Number(eventDelta)) : Math.abs(Number(eventDelta));
+
+    setAssetsState((prev) => ({
+      ...prev,
+      items: prev.items.map((it) =>
+        it.id === eventModalAsset.id
+          ? {
+              ...it,
+              confirmationStatus: 'ارسال‌شده برای تأیید شرکت',
+              events: [
+                ...(it.events || []),
+                {
+                  id: 'ev-' + Date.now(),
+                  type: eventType,
+                  quantityDelta: signedDelta,
+                  date: getTodayJalali(),
+                  user: adminUser.name,
+                  reason: eventReason
+                }
+              ]
+            }
+          : it
+      )
+    }));
+    setEventModalAsset(null);
+    setEventReason('');
+    showToast('رویداد تغییر تعداد اموال با حفظ سابقه ثبت شد.');
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 text-xs">
+      <form onSubmit={handleAddAsset} className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
+        <h3 className="text-base font-bold text-[#0f294a]">ثبت تحویل اولیه اموال و تجهیزات به شرکت</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="px-3 py-2 rounded-xl border bg-white">
+            {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={itemName} onChange={(e) => setItemName(e.target.value)} className="px-3 py-2 rounded-xl border bg-white">
+            {DEFAULT_ASSET_ITEMS.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+          {itemName === 'سایر تجهیزات' && (
+            <input type="text" placeholder="نام تجهیز جدید..." value={customItemName} onChange={(e) => setCustomItemName(e.target.value)} className="px-3 py-2 rounded-xl border" />
+          )}
+          <input type="text" placeholder="کد اموال / سریال" value={assetCode} onChange={(e) => setAssetCode(e.target.value)} className="px-3 py-2 rounded-xl border" />
+          <input type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="px-3 py-2 rounded-xl border" />
+        </div>
+        <button type="submit" className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold">
+          ثبت و ارسال برای تأیید شرکت
+        </button>
+      </form>
+
+      <div className="bg-white rounded-2xl border overflow-hidden">
+        <table className="w-full text-right">
+          <thead className="bg-slate-50 border-b">
+            <tr>
+              <th className="py-3 px-4">شرکت</th>
+              <th className="py-3 px-4">نام قلم</th>
+              <th className="py-3 px-4">موجودی فعلی</th>
+              <th className="py-3 px-4">وضعیت تأیید</th>
+              <th className="py-3 px-4">افزایش / استرداد</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {assetsState.items.map((it) => {
+              const q = computeAssetQuantities(it);
+              return (
+                <tr key={it.id}>
+                  <td className="py-3 px-4 font-bold">{it.companyName}</td>
+                  <td className="py-3 px-4">{it.itemName} ({toPersianDigits(it.assetCode || '-')})</td>
+                  <td className="py-3 px-4 font-extrabold text-blue-900">{toPersianDigits(q.currentQty)}</td>
+                  <td className="py-3 px-4">{it.confirmationStatus}</td>
+                  <td className="py-3 px-4">
+                    <button onClick={() => setEventModalAsset(it)} className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 font-bold">
+                      ثبت افزایش / استرداد
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {eventModalAsset && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4">
+            <h4 className="font-bold text-sm">ثبت رویداد تغییر تعداد: {eventModalAsset.itemName}</h4>
+            <select value={eventType} onChange={(e) => setEventType(e.target.value)} className="w-full px-3 py-2 rounded-xl border bg-white">
+              <option value="تحویل تکمیلی">تحویل تکمیلی (+)</option>
+              <option value="استرداد به مرکز رشد">استرداد به مرکز رشد (-)</option>
+              <option value="ثبت خرابی">ثبت خرابی (-)</option>
+              <option value="ثبت کسری">ثبت کسری (-)</option>
+            </select>
+            <input type="number" min="1" value={eventDelta} onChange={(e) => setEventDelta(e.target.value)} className="w-full px-3 py-2 rounded-xl border" />
+            <input type="text" placeholder="دلیل تغییر (الزامی)..." value={eventReason} onChange={(e) => setEventReason(e.target.value)} className="w-full px-3 py-2 rounded-xl border" />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setEventModalAsset(null)} className="px-4 py-2 rounded-xl border">انصراف</button>
+              <button onClick={handleRecordEvent} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold">ثبت رویداد</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompanyAssetConfirmationView({ companies, assetsState, setAssetsState, adminUser, showToast }) {
+  const [selectedCompId, setSelectedCompId] = useState(companies[0]?.id || 'comp-1');
+  const [discrepancyNotes, setDiscrepancyNotes] = useState({});
+  const compItems = assetsState.items.filter((it) => it.companyId === selectedCompId);
+
+  const handleConfirmItem = (itemId, isOk) => {
+    setAssetsState((prev) => ({
+      ...prev,
+      items: prev.items.map((it) =>
+        it.id === itemId
+          ? {
+              ...it,
+              confirmationStatus: isOk ? 'تأییدشده توسط شرکت' : 'دارای مغایرت',
+              companyConfirmation: {
+                confirmedBy: adminUser.name,
+                date: getNowJalaliDateTime(),
+                discrepancyNote: isOk ? '' : discrepancyNotes[itemId] || 'مغایرت اعلام شد'
+              }
+            }
+          : it
+      )
+    }));
+    showToast(isOk ? 'دریافت قلم اموال تأیید الکترونیکی شد.' : 'مغایرت ثبت و به کارشناس مرکز رشد اعلام شد.');
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 text-xs">
+      <div className="flex justify-between items-center">
+        <h1 className="text-xl font-extrabold text-[#0f294a]">کارتابل تأیید الکترونیکی اموال تحویلی (پنل شرکت)</h1>
+        <select value={selectedCompId} onChange={(e) => setSelectedCompId(e.target.value)} className="px-3.5 py-2 rounded-xl border bg-white font-bold">
+          {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+
+      <div className="space-y-3">
+        {compItems.map((it) => {
+          const q = computeAssetQuantities(it);
+          return (
+            <div key={it.id} className="bg-white rounded-2xl p-5 border border-slate-200 flex flex-wrap justify-between items-center gap-4">
+              <div>
+                <h4 className="font-bold text-sm">{it.itemName} — تعداد فعلی: {toPersianDigits(q.currentQty)}</h4>
+                <p className="text-slate-500 mt-1">وضعیت فعلی: <b>{it.confirmationStatus}</b></p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="توضیح در صورت مغایرت..."
+                  value={discrepancyNotes[it.id] || ''}
+                  onChange={(e) => setDiscrepancyNotes({ ...discrepancyNotes, [it.id]: e.target.value })}
+                  className="px-3 py-1.5 rounded-xl border"
+                />
+                <button onClick={() => handleConfirmItem(it.id, true)} className="px-3.5 py-2 rounded-xl bg-emerald-600 text-white font-bold">
+                  تأیید دریافت
+                </button>
+                <button onClick={() => handleConfirmItem(it.id, false)} className="px-3.5 py-2 rounded-xl bg-rose-600 text-white font-bold">
+                  اعلام مغایرت
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AssetMinutesView({ companies, assetsState, settings, showToast }) {
+  const [selectedCompId, setSelectedCompId] = useState(companies[0]?.id || 'comp-1');
+  const comp = companies.find((c) => c.id === selectedCompId);
+  const compAssets = assetsState.items.filter((it) => it.companyId === selectedCompId);
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 text-xs">
+      <div className="flex flex-wrap justify-between items-center gap-3 no-print">
+        <select value={selectedCompId} onChange={(e) => setSelectedCompId(e.target.value)} className="px-3.5 py-2 rounded-xl border bg-white font-bold">
+          {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              exportAssetMinutesToDocx(comp, compAssets, settings);
+              showToast('صورت‌جلسه اموال با فرمت Word (.docx) دانلود شد.');
+            }}
+            className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold"
+          >
+            دریافت فایل Word (.docx)
+          </button>
+          <button onClick={() => window.print()} className="px-4 py-2 rounded-xl bg-[#0f294a] text-white font-bold">
+            چاپ / PDF
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-8 border border-slate-200 space-y-6">
+        <div className="text-center border-b pb-4">
+          <h2 className="text-lg font-extrabold">{settings.orgHeader}</h2>
+          <p className="text-sm font-bold mt-1">صورت‌جلسه رسمی تحویل و تحول اموال و تجهیزات — شرکت {comp?.name}</p>
+        </div>
+        <table className="w-full text-right border">
+          <thead className="bg-slate-50 border-b">
+            <tr>
+              <th className="p-2.5 border-l">ردیف</th>
+              <th className="p-2.5 border-l">نام قلم</th>
+              <th className="p-2.5 border-l">کد اموال</th>
+              <th className="p-2.5 border-l">موجودی فعلی</th>
+              <th className="p-2.5">وضعیت</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {compAssets.map((it, idx) => (
+              <tr key={it.id}>
+                <td className="p-2.5 border-l">{toPersianDigits(idx + 1)}</td>
+                <td className="p-2.5 border-l font-bold">{it.itemName}</td>
+                <td className="p-2.5 border-l">{toPersianDigits(it.assetCode || '—')}</td>
+                <td className="p-2.5 border-l font-bold">{toPersianDigits(computeAssetQuantities(it).currentQty)}</td>
+                <td className="p-2.5">{it.confirmationStatus}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AssetsAggregateReportView({ assetsState, showToast }) {
+  const summaryByItem = useMemo(() => {
+    const map = {};
+    assetsState.items.forEach((it) => {
+      const q = computeAssetQuantities(it);
+      map[it.itemName] = (map[it.itemName] || 0) + q.currentQty;
+    });
+    return map;
+  }, [assetsState.items]);
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 text-xs">
+      <div className="flex justify-between items-center">
+        <h1 className="text-xl font-extrabold text-[#0f294a]">گزارش تجمیعی اموال مرکز رشد</h1>
+        <button
+          onClick={() => {
+            if (!window.XLSX) {
+              showToast('کتابخانه اکسل در حال بارگذاری است؛ لطفاً لحظاتی دیگر تلاش کنید.', 'error');
+              return;
+            }
+            const ws = window.XLSX.utils.json_to_sheet(
+              assetsState.items.map((it) => ({
+                'شرکت': it.companyName,
+                'نام قلم': it.itemName,
+                'کد اموال': it.assetCode,
+                'موجودی فعلی': computeAssetQuantities(it).currentQty,
+                'وضعیت تأیید': it.confirmationStatus
+              }))
+            );
+            const wb = window.XLSX.utils.book_new();
+            window.XLSX.utils.book_append_sheet(wb, ws, 'اموال مرکز رشد');
+            window.XLSX.writeFile(wb, 'Assets_Report.xlsx');
+            showToast('فایل اکسل گزارش اموال دانلود شد.');
+          }}
+          className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold"
+        >
+          خروجی Excel
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {Object.entries(summaryByItem).map(([name, qty]) => (
+          <div key={name} className="bg-white rounded-2xl p-5 border border-slate-200">
+            <span className="text-2xl font-extrabold text-blue-900 block mb-1">{toPersianDigits(qty)}</span>
+            <span className="font-bold text-slate-700">مجموع {name}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// ۱۰. ماژول دبیرخانه الکترونیکی (مکاتبات، دفتر اندیکاتور، Word و گردش کار)
+// ============================================================================
+function SecretariatModuleView({ subSection, secretariat, setSecretariat, secStats, adminUser, onNavigate, showToast }) {
+  const [letterDirection, setLetterDirection] = useState('incoming');
+  const [subject, setSubject] = useState('');
+  const [partyOrg, setPartyOrg] = useState('');
+  const [partyPerson, setPartyPerson] = useState('');
+  const [senderLetterNo, setSenderLetterNo] = useState('');
+  const [bodyText, setBodyText] = useState('');
+  const [signerName, setSignerName] = useState('دکتر حمیدرضا رضایی');
+  const [signerTitle, setSignerTitle] = useState('رئیس مرکز رشد فناوری نخبگان');
+  const [copies, setCopies] = useState('');
+  const [referModalLetter, setReferModalLetter] = useState(null);
+  const [referTo, setReferTo] = useState('کارشناس ارزیابی');
+  const [referType, setReferType] = useState(REFERRAL_TYPES[0]);
+  const [referNote, setReferNote] = useState('');
+
+  const registerLetter = (asDraft = false) => {
+    if (!subject.trim()) {
+      showToast('موضوع نامه الزامی است.', 'error');
+      return;
+    }
+    const isInc = letterDirection === 'incoming';
+    const seq = isInc ? secretariat.settings.nextIncomingSeq : secretariat.settings.nextOutgoingSeq;
+    const prefix = isInc ? secretariat.settings.incomingPrefix : secretariat.settings.outgoingPrefix;
+    const indicatorNumber = asDraft ? '' : `${prefix}${toPersianDigits(seq)}`;
+
+    const newLetter = {
+      id: 'let-' + Date.now(),
+      direction: letterDirection,
+      indicatorNumber,
+      senderLetterNumber: senderLetterNo,
+      letterDate: getTodayJalali(),
+      receivedDate: getTodayJalali(),
+      senderName: isInc ? partyPerson : '',
+      senderOrg: isInc ? partyOrg : '',
+      recipientOrg: !isInc ? partyOrg : '',
+      recipientPerson: !isInc ? partyPerson : '',
+      subject,
+      summary: bodyText,
+      body: bodyText,
+      signerName,
+      signerTitle,
+      copies,
+      confidentiality: 'عادی',
+      status: asDraft ? 'پیش‌نویس' : isInc ? 'در انتظار ارجاع' : 'ثبت نهایی و ارسال‌شده',
+      isDraft: asDraft,
+      isDeleted: false,
+      referrals: [],
+      versions: [{ version: 1, date: getNowJalaliDateTime(), user: adminUser.name, note: asDraft ? 'ذخیره پیش‌نویس' : 'ثبت نهایی' }]
+    };
+
+    setSecretariat((prev) => ({
+      ...prev,
+      settings: asDraft
+        ? prev.settings
+        : {
+            ...prev.settings,
+            nextIncomingSeq: isInc ? prev.settings.nextIncomingSeq + 1 : prev.settings.nextIncomingSeq,
+            nextOutgoingSeq: !isInc ? prev.settings.nextOutgoingSeq + 1 : prev.settings.nextOutgoingSeq
+          },
+      letters: [newLetter, ...prev.letters],
+      auditLogs: [
+        {
+          id: 'al-' + Date.now(),
+          date: getNowJalaliDateTime(),
+          user: adminUser.name,
+          action: asDraft ? `ذخیره پیش‌نویس: ${subject}` : `ثبت نامه با شماره اندیکاتور ${indicatorNumber}`
+        },
+        ...prev.auditLogs
+      ]
+    }));
+
+    setSubject('');
+    setPartyOrg('');
+    setPartyPerson('');
+    setBodyText('');
+    showToast(asDraft ? 'نامه به‌صورت پیش‌نویس ذخیره شد.' : `نامه با شماره اندیکاتور ${indicatorNumber} ثبت شد.`);
+    onNavigate(asDraft ? 'sec_drafts' : isInc ? 'sec_incoming' : 'sec_outgoing');
+  };
+
+  const handleAddReferral = () => {
+    setSecretariat((prev) => ({
+      ...prev,
+      letters: prev.letters.map((l) =>
+        l.id === referModalLetter.id
+          ? {
+              ...l,
+              status: 'ارجاع‌شده',
+              referrals: [
+                ...(l.referrals || []),
+                {
+                  id: 'ref-' + Date.now(),
+                  fromUser: adminUser.name,
+                  toUsers: [referTo],
+                  type: referType,
+                  note: referNote,
+                  date: getNowJalaliDateTime(),
+                  response: ''
+                }
+              ]
+            }
+          : l
+      )
+    }));
+    setReferModalLetter(null);
+    setReferNote('');
+    showToast('نامه با موفقیت ارجاع داده شد.');
+  };
+
+  const activeLetters = secretariat.letters.filter((l) => !l.isDeleted);
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 text-xs">
+      {subSection === 'sec_dashboard' && (
+        <>
+          <h1 className="text-xl font-extrabold text-[#0f294a]">داشبورد دبیرخانه الکترونیکی</h1>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+            {[
+              { label: 'نامه‌های وارده', val: secStats.incoming },
+              { label: 'نامه‌های صادره', val: secStats.outgoing },
+              { label: 'در انتظار اقدام', val: secStats.pending },
+              { label: 'ارجاع‌شده', val: secStats.referred },
+              { label: 'دارای مهلت پاسخ', val: secStats.withDeadline },
+              { label: 'بایگانی‌شده', val: secStats.archived },
+              { label: 'پیش‌نویس‌ها', val: secStats.drafts }
+            ].map((c, i) => (
+              <div key={i} className="bg-white rounded-2xl p-4 border border-slate-200">
+                <span className="text-2xl font-extrabold text-[#0f294a] block mb-1">{toPersianDigits(c.val)}</span>
+                <span className="text-slate-600">{c.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => onNavigate('sec_new')} className="px-4 py-2.5 rounded-xl bg-[#0f294a] text-white font-bold">
+              ثبت نامه جدید (وارده / صادره)
+            </button>
+          </div>
+        </>
+      )}
+
+      {subSection === 'sec_new' && (
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
+          <div className="flex items-center justify-between border-b pb-3">
+            <h2 className="text-base font-bold text-[#0f294a]">ثبت مکاتبه اداری جدید</h2>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setLetterDirection('incoming')}
+                className={`px-3.5 py-1.5 rounded-xl font-bold ${letterDirection === 'incoming' ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}
+              >
+                نامه وارده
+              </button>
+              <button
+                type="button"
+                onClick={() => setLetterDirection('outgoing')}
+                className={`px-3.5 py-1.5 rounded-xl font-bold ${letterDirection === 'outgoing' ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}
+              >
+                نامه صادره
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block font-bold mb-1">موضوع نامه *</label>
+              <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)} className="w-full px-3 py-2 rounded-xl border" />
+            </div>
+            <div>
+              <label className="block font-bold mb-1">{letterDirection === 'incoming' ? 'سازمان فرستنده' : 'سازمان گیرنده'}</label>
+              <input type="text" value={partyOrg} onChange={(e) => setPartyOrg(e.target.value)} className="w-full px-3 py-2 rounded-xl border" />
+            </div>
+            <div>
+              <label className="block font-bold mb-1">{letterDirection === 'incoming' ? 'نام فرستنده' : 'شخص دریافت‌کننده'}</label>
+              <input type="text" value={partyPerson} onChange={(e) => setPartyPerson(e.target.value)} className="w-full px-3 py-2 rounded-xl border" />
+            </div>
+            {letterDirection === 'incoming' ? (
+              <div>
+                <label className="block font-bold mb-1">شماره نامه فرستنده</label>
+                <input type="text" value={senderLetterNo} onChange={(e) => setSenderLetterNo(e.target.value)} className="w-full px-3 py-2 rounded-xl border" />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block font-bold mb-1">نام امضاکننده</label>
+                  <input type="text" value={signerName} onChange={(e) => setSignerName(e.target.value)} className="w-full px-3 py-2 rounded-xl border" />
+                </div>
+                <div>
+                  <label className="block font-bold mb-1">سمت امضاکننده</label>
+                  <input type="text" value={signerTitle} onChange={(e) => setSignerTitle(e.target.value)} className="w-full px-3 py-2 rounded-xl border" />
+                </div>
+              </>
+            )}
+            <div className="md:col-span-3">
+              <label className="block font-bold mb-1">متن / خلاصه نامه</label>
+              <textarea rows={6} value={bodyText} onChange={(e) => setBodyText(e.target.value)} className="w-full p-3 rounded-xl border leading-6" />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                exportLetterToDocx(
+                  { subject, recipientOrg: partyOrg, recipientPerson: partyPerson, body: bodyText, signerName, signerTitle, copies },
+                  secretariat.settings
+                )
+              }
+              className="px-4 py-2 rounded-xl bg-blue-50 text-blue-800 border border-blue-200 font-bold"
+            >
+              پیش‌نمایش و دانلود Word (.docx)
+            </button>
+            <button type="button" onClick={() => registerLetter(true)} className="px-4 py-2 rounded-xl bg-slate-200 font-bold">
+              ذخیره پیش‌نویس
+            </button>
+            <button type="button" onClick={() => registerLetter(false)} className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold">
+              ثبت نهایی و صدور شماره اندیکاتور
+            </button>
+          </div>
+        </div>
+      )}
+
+      {['sec_incoming', 'sec_outgoing', 'sec_mytasks', 'sec_drafts', 'sec_indicator', 'sec_archive'].includes(subSection) && (
+        <div className="bg-white rounded-2xl border overflow-hidden">
+          <div className="p-4 bg-slate-50 border-b font-bold text-sm text-[#0f294a]">
+            فهرست مکاتبات و دفتر اندیکاتور دبیرخانه
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-right">
+              <thead className="bg-slate-50 border-b">
+                <tr>
+                  <th className="py-3 px-4">شماره اندیکاتور</th>
+                  <th className="py-3 px-4">نوع</th>
+                  <th className="py-3 px-4">موضوع نامه</th>
+                  <th className="py-3 px-4">فرستنده / گیرنده</th>
+                  <th className="py-3 px-4">تاریخ</th>
+                  <th className="py-3 px-4">وضعیت</th>
+                  <th className="py-3 px-4">عملیات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {activeLetters
+                  .filter((l) => {
+                    if (subSection === 'sec_incoming') return l.direction === 'incoming' && !l.isDraft;
+                    if (subSection === 'sec_outgoing') return l.direction === 'outgoing' && !l.isDraft;
+                    if (subSection === 'sec_drafts') return l.isDraft;
+                    return !l.isDraft;
+                  })
+                  .map((l) => (
+                    <tr key={l.id} className="hover:bg-slate-50">
+                      <td className="py-3 px-4 font-bold text-blue-900">{toPersianDigits(l.indicatorNumber || 'پیش‌نویس')}</td>
+                      <td className="py-3 px-4">{l.direction === 'incoming' ? 'وارده' : 'صادره'}</td>
+                      <td className="py-3 px-4 font-bold">{l.subject}</td>
+                      <td className="py-3 px-4">{l.senderOrg || l.recipientOrg}</td>
+                      <td className="py-3 px-4">{toPersianDigits(l.letterDate)}</td>
+                      <td className="py-3 px-4">{l.status}</td>
+                      <td className="py-3 px-4 space-x-2 space-x-reverse">
+                        <button onClick={() => setReferModalLetter(l)} className="px-2.5 py-1 rounded bg-blue-50 text-blue-700 font-bold">
+                          ارجاع
+                        </button>
+                        <button
+                          onClick={() => {
+                            exportLetterToDocx(l, secretariat.settings);
+                            showToast('فایل Word نامه دانلود شد.');
+                          }}
+                          className="px-2.5 py-1 rounded bg-emerald-50 text-emerald-700 font-bold"
+                        >
+                          Word
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {subSection === 'sec_templates' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {secretariat.templates.map((tpl) => (
+            <div key={tpl.id} className="bg-white rounded-2xl p-5 border border-slate-200 space-y-2">
+              <h4 className="font-bold text-sm text-[#0f294a]">{tpl.title}</h4>
+              <p className="text-slate-600 leading-6">{tpl.body}</p>
+              <button
+                onClick={() => {
+                  setSubject(tpl.subject);
+                  setBodyText(tpl.body);
+                  setLetterDirection('outgoing');
+                  onNavigate('sec_new');
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-blue-600 text-white font-bold"
+              >
+                استفاده از این قالب در نامه جدید
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {subSection === 'sec_settings' && (
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-3">
+          <h3 className="font-bold text-base">تنظیمات الگوی شماره‌گذاری اندیکاتور</h3>
+          <p>پیشوند نامه وارده: <b>{secretariat.settings.incomingPrefix}</b> | پیشوند نامه صادره: <b>{secretariat.settings.outgoingPrefix}</b></p>
+        </div>
+      )}
+
+      {referModalLetter && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4">
+            <h4 className="font-bold text-sm">ارجاع نامه: {referModalLetter.subject}</h4>
+            <select value={referTo} onChange={(e) => setReferTo(e.target.value)} className="w-full px-3 py-2 rounded-xl border bg-white">
+              <option value="کارشناس ارزیابی">کارشناس ارزیابی</option>
+              <option value="مدیر مجموعه / رئیس مرکز">مدیر مجموعه / رئیس مرکز</option>
+              <option value="مسئول دبیرخانه">مسئول دبیرخانه</option>
+            </select>
+            <select value={referType} onChange={(e) => setReferType(e.target.value)} className="w-full px-3 py-2 rounded-xl border bg-white">
+              {REFERRAL_TYPES.map((rt) => <option key={rt} value={rt}>{rt}</option>)}
+            </select>
+            <textarea rows={2} placeholder="هامش و دستور ارجاع..." value={referNote} onChange={(e) => setReferNote(e.target.value)} className="w-full p-2.5 rounded-xl border" />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setReferModalLetter(null)} className="px-4 py-2 rounded-xl border">انصراف</button>
+              <button onClick={handleAddReferral} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold">ثبت ارجاع</button>
             </div>
           </div>
         </div>
